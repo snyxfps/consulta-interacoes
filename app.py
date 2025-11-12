@@ -58,36 +58,18 @@ if st.button("Analisar"):
         integracoes_pct = (filtro["integracao"].value_counts(normalize=True) * 100).round(1).astype(str) + "%"
         por_mes = filtro.groupby(filtro["data_hora"].dt.to_period("M")).size()
 
+        # 🔝 Informações principais no topo
         st.markdown(f"""
-**🔎 Total de interações:** {total}  
-**📅 Primeira interação:** {primeira.strftime('%d/%m/%Y %H:%M')}  
-**📅 Última interação:** {ultima.strftime('%d/%m/%Y %H:%M')}  
-**⏳ Tempo desde a primeira:** {dias_desde_primeira} dias  
-**📨 Canal mais utilizado:** {canal_mais_usado}
+🔎 **Total de interações:** {total}  
+📅 **Primeira interação:** {primeira.strftime('%d/%m/%Y %H:%M')}  
+📅 **Última interação:** {ultima.strftime('%d/%m/%Y %H:%M')}  
+⏳ **Tempo desde a primeira:** {dias_desde_primeira} dias  
+📨 **Canal mais utilizado:** {canal_mais_usado}
 """)
 
-        st.subheader("📬 Percentual por canal")
-        st.dataframe(canais_pct)
-
-        st.subheader("📈 Percentual por tipo de evento")
-        st.dataframe(tipos_pct)
-
-        st.subheader("🔗 Percentual por integração")
-        st.dataframe(integracoes_pct)
-
-        st.subheader("📆 Interações por mês")
-        st.dataframe(por_mes)
-
-        # Últimas 3 interações
-        st.subheader("🕒 Últimas 3 interações")
-        ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
-        colunas = ["data_hora", "canal", "conteudo"]
-        if not cliente:
-            colunas.insert(1, "segurado")
-        st.dataframe(ultimas[colunas])
-
-        # 🔍 Geração de status automático
+        # 📌 Status atual
         st.subheader("📌 Status atual da interação")
+        ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
         conteudos = " ".join(ultimas["conteudo"].str.lower())
 
         if "reunião marcada" in conteudos or "agendada" in conteudos:
@@ -102,3 +84,26 @@ if st.button("Analisar"):
             status = "ℹ️ Interação em andamento, sem definição clara ainda."
 
         st.markdown(f"**{status}**")
+
+        # 🕒 Últimas 3 interações
+        st.subheader("🕒 Últimas 3 interações")
+        colunas = ["data_hora", "canal", "conteudo"]
+        if not cliente:
+            colunas.insert(1, "segurado")
+        st.dataframe(ultimas[colunas])
+
+        # 📈 Percentual por tipo de evento
+        st.subheader("📈 Percentual por tipo de evento")
+        st.dataframe(tipos_pct)
+
+        # 📬 Percentual por canal
+        st.subheader("📬 Percentual por canal")
+        st.dataframe(canais_pct)
+
+        # 📆 Interações por mês
+        st.subheader("📆 Interações por mês")
+        st.dataframe(por_mes)
+
+        # 🔗 Percentual por integração
+        st.subheader("🔗 Percentual por integração")
+        st.dataframe(integracoes_pct)
