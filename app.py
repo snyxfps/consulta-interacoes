@@ -81,4 +81,7 @@ if st.button("Analisar"):
         # 🔚 Mostrar as 3 últimas interações
         st.subheader("🕒 Últimas 3 interações")
         ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
-        st.dataframe(ultimas[["data_hora", "canal", "conteudo"]])
+        colunas = ["data_hora", "canal", "conteudo"]
+        if not cliente:
+            colunas.insert(1, "segurado")
+        st.dataframe(ultimas[colunas])
