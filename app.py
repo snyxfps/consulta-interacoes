@@ -7,14 +7,14 @@ import json
 import unicodedata
 import re
 
-# Função para normalizar texto
+# 🔧 Função para normalizar texto
 def limpar(texto):
     texto = unicodedata.normalize("NFKD", texto)
     texto = texto.encode("ASCII", "ignore").decode("utf-8")
     texto = re.sub(r"[^\w\s]", "", texto)
     return texto.lower().strip()
 
-# Autenticação com Google Sheets via segredo
+# 🔐 Autenticação com Google Sheets via segredo
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 try:
     gcp_key = json.loads(st.secrets["gcp_key"])
@@ -26,15 +26,11 @@ except Exception as e:
     st.error("❌ Erro ao conectar com a planilha. Verifique a chave e permissões.")
     st.stop()
 
-# Interface Streamlit
+# 🎯 Interface Streamlit
 st.title("🔍 Consulta de Interações com Segurados")
 pergunta = st.text_input("Digite o nome do cliente:")
 
-# Função de correspondência aproximada
-def similar(a, b):
-    return SequenceMatcher(None, a, b).ratio()
-
-# Busca inteligente e flexível
+# 🔍 Busca inteligente e flexível
 def buscar_interacoes(pergunta, dados):
     if not pergunta.strip():
         return "⚠️ Digite um nome para buscar."
@@ -45,7 +41,10 @@ def buscar_interacoes(pergunta, dados):
     for linha in dados:
         nome = linha.get('segurado', '')
         nome_limpo = limpar(nome)
-        if similar(pergunta_limpa, nome_limpo) > 0.6 or pergunta_limpa in nome_limpo:
+
+        # Verifica se todas as palavras da pergunta estão no nome
+        palavras = pergunta_limpa.split()
+        if all(p in nome_limpo for p in palavras):
             resultados.append(linha)
 
     if not resultados:
@@ -63,7 +62,7 @@ def buscar_interacoes(pergunta, dados):
 💬 **{ult['conteudo']}**
 """
 
-# Botão de busca
+# 🧠 Botão de busca
 if st.button("Buscar"):
     resposta = buscar_interacoes(pergunta, dados)
     st.markdown(resposta)
