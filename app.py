@@ -2,41 +2,54 @@ import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from difflib import SequenceMatcher
+from datetime import datetime
 import json
 
 # Autenticação com Google Sheets via segredo
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-gcp_key = json.loads(st.secrets["gcp_key"])
-creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
-client = gspread.authorize(creds)
-
-# Abre a planilha
-sheet = client.open_by_key("1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE").sheet1
-dados = sheet.get_all_records()
+try:
+    gcp_key = json.loads(st.secrets["gcp_key"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key("1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE").sheet1
+    dados = sheet.get_all_records()
+except Exception as e:
+    st.error("❌ Erro ao conectar com a planilha. Verifique a chave e permissões.")
+    st.stop()
 
 # Interface Streamlit
-st.title("🔍 Consulta de Interações com Segurados")
-pergunta = st.text_input("Digite sua pergunta:")
+st.title("🔍 Consulta de Integrações com Segurados")
+pergunta = st.text_input("Digite o nome do cliente:")
 
 # Função de correspondência aproximada
 def similar(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
-# Busca inteligente
+# Busca inteligente e segura
 def buscar_interacoes(pergunta, dados):
-    pergunta = pergunta.lower()
-    resultados = []
+    if not pergunta.strip():
+        return "⚠️ Digite um nome para buscar."
 
+    resultados = []
     for linha in dados:
-        nome = linha['segurado'].lower()
-        if similar(pergunta, nome) > 0.6 or any(p in nome for p in pergunta.split()):
+        nome = linha.get('segurado', '').lower()
+        if similar(pergunta, nome) > 0.6:
             resultados.append(linha)
 
-    if resultados:
-        ult = sorted(resultados, key=lambda x: x['data_hora'], reverse=True)[0]
-        return f"🗓️ {ult['data_hora']}\n📨 {ult['canal']}\n💬 {ult['conteudo']}"
-    else:
-        return "⚠️ Nenhuma interação encontrada."
+    if not resultados:
+        return "⚠️ Nenhuma interação encontrada para esse cliente."
+
+    try:
+        resultados.sort(key=lambda x: datetime.strptime(x['data_hora'], "%d/%m/%Y %H:%M"), reverse=True)
+    except Exception:
+        return "⚠️ Erro ao interpretar datas. Verifique o formato na planilha."
+
+    ult = resultados[0]
+    return f"""
+🗓️ **{ult['data_hora']}**
+📨 **{ult['canal']}**
+💬 **{ult['conteudo']}**
+"""
 
 # Botão de busca
 if st.button("Buscar"):
