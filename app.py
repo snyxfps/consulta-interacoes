@@ -29,17 +29,23 @@ except:
 
 # Interface
 st.title("📊 Análise de Interações com Segurados")
-integracao = st.text_input("Filtrar por integração (ex: RCV) — ou deixe em branco para ver tudo:").strip().upper()
+
+col1, col2 = st.columns(2)
+with col1:
+    cliente = st.text_input("Filtrar por cliente (nome exato):").strip().upper()
+with col2:
+    integracao = st.text_input("Filtrar por integração (ex: RCV):").strip().upper()
 
 if st.button("Analisar"):
-    # Aplica filtro se houver integração
+    filtro = df.copy()
+
+    if cliente:
+        filtro = filtro[filtro["segurado"].str.upper() == cliente]
     if integracao:
-        filtro = df[df["integracao"].str.upper() == integracao]
-    else:
-        filtro = df.copy()
+        filtro = filtro[filtro["integracao"].str.upper() == integracao]
 
     if filtro.empty:
-        st.warning("⚠️ Nenhuma interação encontrada.")
+        st.warning("⚠️ Nenhuma interação encontrada com esses filtros.")
     else:
         total = len(filtro)
         primeira = filtro["data_hora"].min()
@@ -47,12 +53,9 @@ if st.button("Analisar"):
         dias_desde_primeira = (datetime.now() - primeira).days
         canal_mais_usado = filtro["canal"].value_counts().idxmax()
 
-        # Percentuais por canal
         canais_pct = (filtro["canal"].value_counts(normalize=True) * 100).round(1).astype(str) + "%"
         tipos_pct = (filtro["tipo_evento"].value_counts(normalize=True) * 100).round(1).astype(str) + "%"
         integracoes_pct = (filtro["integracao"].value_counts(normalize=True) * 100).round(1).astype(str) + "%"
-
-        # Interações por mês
         por_mes = filtro.groupby(filtro["data_hora"].dt.to_period("M")).size()
 
         st.markdown(f"""
