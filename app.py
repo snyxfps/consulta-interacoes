@@ -1,7 +1,6 @@
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from difflib import SequenceMatcher
 from datetime import datetime
 import json
 import unicodedata
@@ -36,15 +35,12 @@ def buscar_interacoes(pergunta, dados):
         return "⚠️ Digite um nome para buscar."
 
     pergunta_limpa = limpar(pergunta)
+    palavras = pergunta_limpa.split()
     resultados = []
 
     for linha in dados:
-        nome = linha.get('segurado', '')
-        nome_limpo = limpar(nome)
-
-        # Verifica se todas as palavras da pergunta estão no nome
-        palavras = pergunta_limpa.split()
-        if all(p in nome_limpo for p in palavras):
+        nome = limpar(linha.get('segurado', ''))
+        if any(p in nome for p in palavras):
             resultados.append(linha)
 
     if not resultados:
