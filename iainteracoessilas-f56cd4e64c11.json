@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "iainteracoessilas",
+  "private_key_id": "f56cd4e64c11d07a7cb840c6de9cd28312f461e3",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCsBkdZZdJPIdgF\niV8I1HpQIs3T1jT955hTtA9z2fXhPxNVQ2AJZCJ8YGd2yBqcCBJu6dPVAEugQH1t\ndTgE5XSRSqDCVD6Ps2gqoFSms5zSIPetqpmKxBWRi8OSYIk9wIht6MOQUa3JSOTq\nE5Tw0jc15a2lc0sxwbX9T4jdwyiqgmCt37TvtZvZeOuq6R6lQoN1KjG6kVoBG/8b\n9XuijfbmV6ffYcJPl82mqnD/SwpywNWlLGkvkW61j3ZLMsV7KnLkLm76qAVlEf7h\nMyXGMTKj8HYrpjQBLS3CrrFJfKb6I8HYk+RPdkAxCNRn3kM8pgA42/6yguz51JQf\nqqj62/SfAgMBAAECggEAAyvfUZSsVPhs1HcDzJSEg1IfzALFUJ1Lxo2OL6jxGEue\nLkTef+Jk7KaCn4Ln5YmB/OsMghFpil5ISIqG5cns3CdtapMqTz3BjoJ6nQomOp99\n+E4FWxAP8gSdQMLM/hBhZcudQRSD1sF/xk+KiS7lzhoRPfivz2nzCS4g+eUUPutQ\ncdbb0+iq/JTWQr26UpPtEUEUyD1q44y+XJOvEXxlHEolW7GowzdxoXxfNp1d241B\nmsy2r+caMTfaaGPnsgh6HyMUqbG8QzJ08+rKn9GukRWlN36Bm+I4McaUjrVaJk3i\ngvxNUiwbDZlqif2PEapg3Oqhu6jK9SydGX638yfo5QKBgQDzMvwvgwZFMrXC/N2X\nCB2JjMQcOeDC7xEfge5dmdUWabg2kSC+ngim+frvXdPCE5ozbH7KsgVPpRNyu7Df\nDXj+bcLddZgwYuovfMYSMHPD5ucJle/w6ouJSe85VNbheUqSQ2mkzMGJJBBGN5Cd\nEhWpIgs9buFGQ+qUDdr58sm5YwKBgQC1FD4r9Aib1sLMgmZK/vdvnbGVEFl6nAK/\n9pSrddHEkeh7CnKej5lakgxcFboyu0P94RKlCL0Psgz5xwuXOkZn97ObCqkT95NP\nF/XSse5i98Y1Y9eJPraxcWUXJ5/iTSgi2g0j2aOM17BZhnk5TTukOkq1EIwLbCnm\nj2AUGJUalQKBgQDCEx7Sn4HCeOw5tWbz3sMLgG0DhWCKzxLgDOT2hwtYPneF/Byg\nYSbQcU7B9CNHjjMQ9HTeNmAspbQ2a/eCmJLEnzzRU8VmX5k42h6KZ2YKoFog+Sko\nHVPK9FhWbRCpkAxlWiyVGd0cHs5p6m+aGNN2TDeiB7j4RLyO99uWeRxntwKBgFnF\n1mjeDGKOX3cacvJdY3ivmnnHaEUUEXzwF5bFy6CDodlWPasEkEfJvlzs3KoIE1ZL\nfn3ZTjn40NwIZWOtHXiv4hhMebSPejWtME8rrX7dTiPsAtBlChgAmtiW6Xo9PFfC\n+N68KIxL5n8L3w+cjaQGzkDkGjoTftZyYHS2Fz3dAoGBALI9ekC7nlI2stXFFlFf\n1PDMLKXB1U8eoca6chl7NO5YW6bugpJybT4swnlczoMWulw31LXmauwm4L8VvL0L\nmQBWx1AGX79HXGwfvKrtDZsZOdPoFl6A0vLAGci9orAt/KNbo7zw25WHflNAzb/b\nk38qtzyKCt00yvXWxt2a40Bw\n-----END PRIVATE KEY-----\n",
+  "client_email": "leitor-planilha@iainteracoessilas.iam.gserviceaccount.com",
+  "client_id": "116307076516882105363",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/leitor-planilha%40iainteracoessilas.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
