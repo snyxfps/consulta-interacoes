@@ -77,3 +77,8 @@ if st.button("Analisar"):
 
         st.subheader("📆 Interações por mês")
         st.dataframe(por_mes)
+
+        # 🔚 Mostrar as 3 últimas interações
+        st.subheader("🕒 Últimas 3 interações")
+        ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
+        st.dataframe(ultimas[["data_hora", "canal", "conteudo"]])
