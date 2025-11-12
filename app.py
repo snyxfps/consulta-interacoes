@@ -1,10 +1,12 @@
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import json
 
-# Autenticação com Google Sheets
+# Autenticação via segredo do Streamlit
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("iainteracoessilas-f56cd4e64c11.json", scope)
+gcp_key = json.loads(st.secrets["gcp_key"])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
 client = gspread.authorize(creds)
 
 # Abre a planilha
