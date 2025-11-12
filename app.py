@@ -78,10 +78,27 @@ if st.button("Analisar"):
         st.subheader("📆 Interações por mês")
         st.dataframe(por_mes)
 
-        # 🔚 Mostrar as 3 últimas interações
+        # Últimas 3 interações
         st.subheader("🕒 Últimas 3 interações")
         ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
         colunas = ["data_hora", "canal", "conteudo"]
         if not cliente:
             colunas.insert(1, "segurado")
         st.dataframe(ultimas[colunas])
+
+        # 🔍 Geração de status automático
+        st.subheader("📌 Status atual da interação")
+        conteudos = " ".join(ultimas["conteudo"].str.lower())
+
+        if "reunião marcada" in conteudos or "agendada" in conteudos:
+            status = "✅ Reunião já foi marcada."
+        elif "solicitei retorno" in conteudos or "cobrando disponibilidade" in conteudos:
+            status = "⏳ Aguardando retorno para agendar."
+        elif "enviei e-mail" in conteudos or "contato inicial" in conteudos:
+            status = "📨 Contato inicial realizado, aguardando resposta."
+        elif "finalizado" in conteudos:
+            status = "🏁 Processo finalizado."
+        else:
+            status = "ℹ️ Interação em andamento, sem definição clara ainda."
+
+        st.markdown(f"**{status}**")
