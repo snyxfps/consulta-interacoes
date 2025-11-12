@@ -2,18 +2,10 @@ import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+import pandas as pd
 import json
-import unicodedata
-import re
 
-# 🔧 Função para normalizar texto
-def limpar(texto):
-    texto = unicodedata.normalize("NFKD", texto)
-    texto = texto.encode("ASCII", "ignore").decode("utf-8")
-    texto = re.sub(r"[^\w\s]", "", texto)
-    return texto.lower().strip()
-
-# 🔐 Autenticação com Google Sheets via segredo
+# Autenticação com Google Sheets via segredo
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 try:
     gcp_key = json.loads(st.secrets["gcp_key"])
@@ -25,40 +17,53 @@ except Exception as e:
     st.error("❌ Erro ao conectar com a planilha. Verifique a chave e permissões.")
     st.stop()
 
-# 🎯 Interface Streamlit
-st.title("🔍 Consulta de Interações com Segurados")
-pergunta = st.text_input("Digite o nome do cliente:")
+# Converte para DataFrame
+df = pd.DataFrame(dados)
 
-# 🔍 Busca inteligente e flexível
-def buscar_interacoes(pergunta, dados):
-    if not pergunta.strip():
-        return "⚠️ Digite um nome para buscar."
+# Converte data_hora para datetime
+try:
+    df["data_hora"] = pd.to_datetime(df["data_hora"], format="%d/%m/%Y %H:%M")
+except:
+    st.error("⚠️ Erro ao interpretar datas. Verifique o formato na planilha.")
+    st.stop()
 
-    pergunta_limpa = limpar(pergunta)
-    palavras = pergunta_limpa.split()
-    resultados = []
+# Interface
+st.title("📊 Análise de Interações com Segurados")
 
-    for linha in dados:
-        nome = limpar(linha.get('segurado', ''))
-        if any(p in nome for p in palavras):
-            resultados.append(linha)
+# Filtro por integração
+integracao = st.text_input("Digite o nome da integração (ex: RCV):").strip().upper()
 
-    if not resultados:
-        return "⚠️ Nenhuma interação encontrada para esse cliente."
+if st.button("Analisar"):
+    if not integracao:
+        st.warning("Digite o nome da integração para filtrar.")
+    else:
+        filtro = df[df["integracao"].str.upper() == integracao]
 
-    try:
-        resultados.sort(key=lambda x: datetime.strptime(x['data_hora'], "%d/%m/%Y %H:%M"), reverse=True)
-    except Exception:
-        return "⚠️ Erro ao interpretar datas. Verifique o formato na planilha."
+        if filtro.empty:
+            st.warning("⚠️ Nenhuma interação encontrada para essa integração.")
+        else:
+            total = len(filtro)
+            primeira = filtro["data_hora"].min()
+            ultima = filtro["data_hora"].max()
+            dias_desde_primeira = (datetime.now() - primeira).days
+            canal_mais_usado = filtro["canal"].value_counts().idxmax()
+            tipo_por_mes = filtro.groupby([filtro["data_hora"].dt.to_period("M"), "tipo_evento"]).size().unstack(fill_value=0)
+            canais = filtro["canal"].value_counts()
+            tipos = filtro["tipo_evento"].value_counts()
 
-    ult = resultados[0]
-    return f"""
-🗓️ **{ult['data_hora']}**
-📨 **{ult['canal']}**
-💬 **{ult['conteudo']}**
-"""
+            st.markdown(f"""
+**🔎 Total de interações:** {total}  
+**📅 Primeira interação:** {primeira.strftime('%d/%m/%Y %H:%M')}  
+**📅 Última interação:** {ultima.strftime('%d/%m/%Y %H:%M')}  
+**⏳ Tempo desde a primeira:** {dias_desde_primeira} dias  
+**📨 Canal mais utilizado:** {canal_mais_usado}
+""")
 
-# 🧠 Botão de busca
-if st.button("Buscar"):
-    resposta = buscar_interacoes(pergunta, dados)
-    st.markdown(resposta)
+            st.subheader("📈 Interações por tipo de evento")
+            st.dataframe(tipos)
+
+            st.subheader("📬 Interações por canal")
+            st.dataframe(canais)
+
+            st.subheader("📆 Cobranças e Inícios por mês")
+            st.dataframe(tipo_por_mes)
