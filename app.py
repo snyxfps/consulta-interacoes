@@ -95,9 +95,9 @@ def baixar_csv(df_in):
     return buffer.getvalue().encode("utf-8")
 
 # --------------------------
-# Layout - abas
+# Layout - abas (sem Conversacional)
 # --------------------------
-aba = st.sidebar.radio("Escolha uma aba:", ["📊 Análise por filtros", "🗣️ Modo Conversacional", "📁 Dados completos"])
+aba = st.sidebar.radio("Escolha uma aba:", ["📊 Análise por filtros", "📁 Dados completos"])
 
 # --------------------------
 # Aba: Análise por filtros
@@ -179,201 +179,15 @@ if aba == "📊 Análise por filtros":
         cols_display = ["data_hora", "segurado", "canal", "tipo_evento", "integracao", "conteudo"]
         st.dataframe(filtro.sort_values("data_hora", ascending=False)[cols_display].head(50), height=320)
 
+        # Gráfico adicional: interações por mês
+        st.subheader("Interações por mês")
+        cont_mes = filtro.groupby(filtro["data_hora"].dt.to_period("M")).size().sort_index()
+        cont_mes.index = cont_mes.index.astype(str)
+        st.altair_chart(gerar_bar_chart(cont_mes, "Interações por mês"), use_container_width=True)
+
         # Download CSV desta seleção
         csv_bytes = baixar_csv(filtro[cols_display])
         st.download_button("📥 Download dos dados filtrados (CSV)", data=csv_bytes, file_name="interacoes_filtradas.csv", mime="text/csv")
-
-# --------------------------
-# Aba: Modo Conversacional
-# --------------------------
-elif aba == "🗣️ Modo Conversacional":
-    st.title("🗣️ Modo Conversacional")
-    st.write("Faça perguntas em linguagem natural. Exemplos: 'qual o canal que eu mais utilizo?', 'me mostra gráfico por integração', 'qual integração mais usada', 'o que foi feito com 5 Rodas', 'quantos dias faz desde a última interação'.")
-
-    pergunta = st.text_input("Digite sua pergunta:", value="", key="pergunta_input")
-    executar = st.button("Enviar pergunta")
-
-    def responde_pergunta(texto):
-        t = texto.lower()
-        resp_lines = []
-        show_plot = False
-        plot_obj = None
-        tabela_para_baixar = None
-
-        # Intenção: quantos dias desde a última interação
-        dias_intents = [
-            "quantos dias", "dias desde", "quantos dias faz", "há quantos dias", "dias desde a última interação",
-            "dias desde a ultima interação", "quanto tempo desde a última interação", "quanto tempo desde a ultima interação"
-        ]
-        if any(k in t for k in dias_intents):
-            cliente_detectado = None
-            for nome in df["segurado"].unique():
-                if nome.lower() in t:
-                    cliente_detectado = nome
-                    break
-            if cliente_detectado:
-                filtro_c = df[df["segurado"].str.lower() == cliente_detectado.lower()]
-                if filtro_c.empty or filtro_c["data_hora"].dropna().empty:
-                    resp_lines.append(f"ℹ️ Não encontrei datas de interação para **{cliente_detectado}**.")
-                else:
-                    ultima = filtro_c["data_hora"].max()
-                    dias = (datetime.now() - ultima).days
-                    resp_lines.append(f"🕒 Última interação com **{cliente_detectado}** foi em {ultima.strftime('%d/%m/%Y %H:%M')} — há **{dias} dias**.")
-                    tabela_para_baixar = filtro_c.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            else:
-                if df["data_hora"].dropna().empty:
-                    resp_lines.append("ℹ️ Não há datas de interação na planilha.")
-                else:
-                    ultima = df["data_hora"].max()
-                    dias = (datetime.now() - ultima).days
-                    resp_lines.append(f"🕒 Última interação registrada foi em {ultima.strftime('%d/%m/%Y %H:%M')} — há **{dias} dias**.")
-                    tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            return {"text": "\n".join(resp_lines), "plot": None, "show_plot": False, "table": tabela_para_baixar}
-
-        # Intenção: canal mais usado
-        canal_intents = [
-            "canal mais usado", "canal que eu mais utilizo", "canal mais utilizado", "qual canal eu uso mais",
-            "canal utilizo para tratar", "me mostra o canal mais usado", "qual o canal que eu mais utilizo"
-        ]
-        if any(k in t for k in canal_intents):
-            cliente_detectado = None
-            for nome in df["segurado"].unique():
-                if nome.lower() in t:
-                    cliente_detectado = nome
-                    break
-            if cliente_detectado:
-                filtro_c = df[df["segurado"].str.lower() == cliente_detectado.lower()]
-                if filtro_c.empty:
-                    resp_lines.append(f"ℹ️ Não encontrei interações para {cliente_detectado}.")
-                else:
-                    canal = filtro_c["canal"].mode().iloc[0] if not filtro_c["canal"].mode().empty else "—"
-                    resp_lines.append(f"📨 Canal mais utilizado com **{cliente_detectado}**: **{canal}**")
-                    cont = filtro_c["canal"].value_counts()
-                    plot_obj = gerar_bar_chart(cont, f"Interações por canal - {cliente_detectado}")
-                    show_plot = True
-                    tabela_para_baixar = filtro_c.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            else:
-                canal = df["canal"].mode().iloc[0] if not df["canal"].mode().empty else "—"
-                resp_lines.append(f"📨 Canal mais utilizado no geral: **{canal}**")
-                cont = df["canal"].value_counts()
-                plot_obj = gerar_bar_chart(cont, "Interações por canal - Geral")
-                show_plot = True
-                tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": show_plot, "table": tabela_para_baixar}
-
-        # Intenção: integração mais usada
-        integration_intents = [
-            "qual integração", "integração que eu mais tenho", "qual integracao", "integração mais usada",
-            "qual integração eu mais tenho interação", "qual integracao mais usada", "me mostra integração mais usada",
-            "qual integracao eu mais tenho"
-        ]
-        if any(k in t for k in integration_intents):
-            cliente_detectado = None
-            for nome in df["segurado"].unique():
-                if nome.lower() in t:
-                    cliente_detectado = nome
-                    break
-            if cliente_detectado:
-                filtro_c = df[df["segurado"].str.lower() == cliente_detectado.lower()]
-                if filtro_c.empty:
-                    resp_lines.append(f"ℹ️ Não encontrei interações para {cliente_detectado}.")
-                else:
-                    inte = filtro_c["integracao"].mode().iloc[0] if not filtro_c["integracao"].mode().empty else "—"
-                    resp_lines.append(f"🔗 Integração mais utilizada com **{cliente_detectado}**: **{inte}**")
-                    cont = filtro_c["integracao"].value_counts()
-                    plot_obj = gerar_bar_chart(cont, f"Interações por integração - {cliente_detectado}")
-                    show_plot = True
-                    tabela_para_baixar = filtro_c.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            else:
-                inte = df["integracao"].mode().iloc[0] if not df["integracao"].mode().empty else "—"
-                resp_lines.append(f"🔗 Integração mais utilizada no geral: **{inte}**")
-                cont = df["integracao"].value_counts()
-                plot_obj = gerar_bar_chart(cont, "Interações por integração - Geral")
-                show_plot = True
-                tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": show_plot, "table": tabela_para_baixar}
-
-        # Intenção: gráfico específico
-        if "gráfico" in t or "grafico" in t or "me mostra um gráfico" in t or "me mostra gráfico" in t:
-            if "canal" in t:
-                cont = df["canal"].value_counts()
-                plot_obj = gerar_bar_chart(cont, "Interações por canal - Geral")
-                resp_lines.append("📊 Aqui está o gráfico de interações por canal.")
-                tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-                return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": True, "table": tabela_para_baixar}
-            if "integração" in t or "integracao" in t:
-                cont = df["integracao"].value_counts()
-                plot_obj = gerar_bar_chart(cont, "Interações por integração - Geral")
-                resp_lines.append("📊 Aqui está o gráfico de interações por integração.")
-                tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-                return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": True, "table": tabela_para_baixar}
-            if "mês" in t or "mensal" in t:
-                cont = df.groupby(df["data_hora"].dt.to_period("M")).size().sort_index()
-                cont.index = cont.index.astype(str)
-                plot_obj = gerar_bar_chart(cont, "Interações por mês")
-                resp_lines.append("📆 Aqui está o gráfico de interações por mês.")
-                tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-                return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": True, "table": tabela_para_baixar}
-
-        # Intenção: últimas interações / o que foi feito com cliente X
-        if "o que foi feito" in t or "últimas interações" in t or "ultimas interacoes" in t or "o que foi feito com" in t:
-            cliente_detectado = None
-            for nome in df["segurado"].unique():
-                if nome.lower() in t:
-                    cliente_detectado = nome
-                    break
-            if not cliente_detectado:
-                resp_lines.append("ℹ️ Para mostrar interações informe o nome do cliente na pergunta.")
-                return {"text": "\n".join(resp_lines), "show_plot": False, "table": None}
-            filtro_c = df[df["segurado"].str.lower() == cliente_detectado.lower()].sort_values("data_hora", ascending=False)
-            if filtro_c.empty:
-                resp_lines.append(f"ℹ️ Nenhuma interação encontrada para {cliente_detectado}.")
-                return {"text": "\n".join(resp_lines), "show_plot": False, "table": None}
-            resp_lines.append(f"🕒 Últimas interações com **{cliente_detectado}**:")
-            tabela_para_baixar = filtro_c[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            for _, row in tabela_para_baixar.head(10).iterrows():
-                data_str = row["data_hora"].strftime("%d/%m/%Y %H:%M") if pd.notna(row["data_hora"]) else "s/d"
-                resp_lines.append(f"- {data_str} | {row['canal']} | {row['tipo_evento']} | {row['integracao']} | {row['conteudo'][:150]}")
-            return {"text": "\n".join(resp_lines), "show_plot": False, "table": tabela_para_baixar}
-
-        # Intenção: quantas cobranças
-        if "cobrança" in t or "cobrancas" in t or "quantas cobranças" in t or "quantas cobrancas" in t:
-            filtro_cobr = df[df["tipo_evento"].str.lower().str.contains("cobrança|cobranca", na=False)]
-            if filtro_cobr.empty:
-                resp_lines.append("ℹ️ Não foram encontradas entradas de cobrança.")
-                return {"text": "\n".join(resp_lines), "show_plot": False, "table": None}
-            cont = filtro_cobr.groupby(filtro_cobr["data_hora"].dt.to_period("M")).size().sort_index()
-            cont.index = cont.index.astype(str)
-            plot_obj = gerar_bar_chart(cont, "Cobranças por mês")
-            resp_lines.append("📆 Quantidade de cobranças por mês:")
-            for per, qtd in cont.items():
-                resp_lines.append(f"- {per}: {qtd}")
-            tabela_para_baixar = filtro_cobr[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": True, "table": tabela_para_baixar}
-
-        # Intenção: mostrar tudo / exportar tudo
-        if "tudo" in t or "todas as perguntas" in t or "me dá tudo" in t or "quero tudo" in t:
-            resp_lines.append("📁 Você pode baixar todos os dados da planilha. Estou mostrando os primeiros registros abaixo e liberando o download.")
-            tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-            return {"text": "\n".join(resp_lines), "show_plot": False, "table": tabela_para_baixar}
-
-        # Caso não entenda
-        resp_lines.append("🤖 Ainda estou aprendendo a entender esse tipo de pergunta. Tente incluir palavras como 'status', 'últimas interações', 'canal', 'integração', 'gráfico', 'cobranças', 'quantos dias'.")
-        return {"text": "\n".join(resp_lines), "show_plot": False, "table": None}
-
-    if executar and pergunta.strip():
-        result = responde_pergunta(pergunta.strip())
-        st.markdown(result["text"])
-
-        if result.get("show_plot") and result.get("plot") is not None:
-            st.altair_chart(result["plot"], use_container_width=True)
-
-        if result.get("table") is not None:
-            st.subheader("Tabela de dados resultante")
-            tabela = result["table"].reset_index(drop=True)
-            st.dataframe(tabela, height=300)
-            csv_bytes = baixar_csv(tabela)
-            st.download_button("📥 Download desses dados (CSV)", data=csv_bytes, file_name="resultado_pergunta.csv", mime="text/csv")
 
 # --------------------------
 # Aba: Dados completos
@@ -399,5 +213,5 @@ elif aba == "📁 Dados completos":
 # --------------------------
 st.sidebar.markdown("---")
 st.sidebar.write("Dicas de uso:")
-st.sidebar.write("- No Modo Conversacional, mencione o nome do cliente para respostas específicas.")
-st.sidebar.write("- Termos úteis: canal, integração, gráfico, últimas interações, cobranças, status, quantos dias.")
+st.sidebar.write("- Use a aba Análise por filtros para consultas rápidas e gráficos.")
+st.sidebar.write("- Use a aba Dados completos para exportar todo o conteúdo da planilha.")
