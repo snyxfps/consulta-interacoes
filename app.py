@@ -46,9 +46,14 @@ if st.button("Analisar"):
         ultima = filtro["data_hora"].max()
         dias_desde_primeira = (datetime.now() - primeira).days
         canal_mais_usado = filtro["canal"].value_counts().idxmax()
-        tipo_por_mes = filtro.groupby([filtro["data_hora"].dt.to_period("M"), "tipo_evento"]).size().unstack(fill_value=0)
-        canais = filtro["canal"].value_counts()
-        tipos = filtro["tipo_evento"].value_counts()
+
+        # Percentuais por canal
+        canais_pct = (filtro["canal"].value_counts(normalize=True) * 100).round(1).astype(str) + "%"
+        tipos_pct = (filtro["tipo_evento"].value_counts(normalize=True) * 100).round(1).astype(str) + "%"
+        integracoes_pct = (filtro["integracao"].value_counts(normalize=True) * 100).round(1).astype(str) + "%"
+
+        # Interações por mês
+        por_mes = filtro.groupby(filtro["data_hora"].dt.to_period("M")).size()
 
         st.markdown(f"""
 **🔎 Total de interações:** {total}  
@@ -58,11 +63,14 @@ if st.button("Analisar"):
 **📨 Canal mais utilizado:** {canal_mais_usado}
 """)
 
-        st.subheader("📈 Interações por tipo de evento")
-        st.dataframe(tipos)
+        st.subheader("📬 Percentual por canal")
+        st.dataframe(canais_pct)
 
-        st.subheader("📬 Interações por canal")
-        st.dataframe(canais)
+        st.subheader("📈 Percentual por tipo de evento")
+        st.dataframe(tipos_pct)
 
-        st.subheader("📆 Cobranças e Inícios por mês")
-        st.dataframe(tipo_por_mes)
+        st.subheader("🔗 Percentual por integração")
+        st.dataframe(integracoes_pct)
+
+        st.subheader("📆 Interações por mês")
+        st.dataframe(por_mes)
