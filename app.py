@@ -4,6 +4,15 @@ from oauth2client.service_account import ServiceAccountCredentials
 from difflib import SequenceMatcher
 from datetime import datetime
 import json
+import unicodedata
+import re
+
+# Função para normalizar texto
+def limpar(texto):
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = texto.encode("ASCII", "ignore").decode("utf-8")
+    texto = re.sub(r"[^\w\s]", "", texto)
+    return texto.lower().strip()
 
 # Autenticação com Google Sheets via segredo
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -23,19 +32,20 @@ pergunta = st.text_input("Digite o nome do cliente:")
 
 # Função de correspondência aproximada
 def similar(a, b):
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+    return SequenceMatcher(None, a, b).ratio()
 
 # Busca inteligente e flexível
 def buscar_interacoes(pergunta, dados):
     if not pergunta.strip():
         return "⚠️ Digite um nome para buscar."
 
-    pergunta = pergunta.lower()
+    pergunta_limpa = limpar(pergunta)
     resultados = []
 
     for linha in dados:
-        nome = linha.get('segurado', '').lower()
-        if similar(pergunta, nome) > 0.6 or pergunta in nome:
+        nome = linha.get('segurado', '')
+        nome_limpo = limpar(nome)
+        if similar(pergunta_limpa, nome_limpo) > 0.6 or pergunta_limpa in nome_limpo:
             resultados.append(linha)
 
     if not resultados:
