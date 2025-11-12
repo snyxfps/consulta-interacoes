@@ -223,19 +223,42 @@ if aba == "Análise por filtros":
         st.download_button("Download dos dados filtrados (CSV)", data=csv_bytes, file_name="interacoes_filtradas.csv", mime="text/csv")
 
 # --------------------------
-# Aba: Dados completos
+# Aba: Dados completos (corrigida para evitar KeyError)
 # --------------------------
 elif aba == "Dados completos":
     st.title("Dados completos da planilha")
-    cols = st.multiselect("Colunas a exibir", options=df.columns.tolist(), default=["data_hora_fmt","segurado","canal","conteudo","tipo_evento","integracao"])
-    ordenar = st.selectbox("Ordenar por", options=["Nenhum"] + df.columns.tolist(), index=0)
+
+    # colunas disponíveis para seleção (nome atual do DataFrame, com data_hora já renomeada)
+    tabela_full = df.copy().rename(columns={"data_hora_fmt": "data_hora"})
+    available_cols = tabela_full.columns.tolist()
+
+    cols = st.multiselect(
+        "Colunas a exibir",
+        options=available_cols,
+        default=[c for c in ["data_hora", "segurado", "canal", "conteudo", "tipo_evento", "integracao"] if c in available_cols]
+    )
+
+    ordenar = st.selectbox("Ordenar por", options=["Nenhum"] + available_cols, index=0)
     asc = st.checkbox("Ordem crescente", value=False)
     mostrar = st.number_input("Quantidade de linhas a mostrar", min_value=10, max_value=10000, value=200, step=10)
 
-    tabela_full = df.copy().rename(columns={"data_hora_fmt":"data_hora"})
-    if ordenar != "Nenhum":
-        tabela_full = tabela_full.sort_values(by=ordenar, ascending=asc)
-    st.dataframe(tabela_full[cols].head(mostrar), height=640)
+    # verifica colunas solicitadas
+    requested = cols
+    existing = [c for c in requested if c in tabela_full.columns]
+    missing_cols = [c for c in requested if c not in tabela_full.columns]
+    if missing_cols:
+        st.warning(f"As colunas a seguir não existem e foram ignoradas: {missing_cols}")
 
-    csv_bytes_all = baixar_csv_bytes(tabela_full[["data_hora","segurado","canal","conteudo","tipo_evento","integracao"]])
+    # ordenação segura
+    if ordenar != "Nenhum" and ordenar in tabela_full.columns:
+        tabela_full = tabela_full.sort_values(by=ordenar, ascending=asc)
+
+    if not existing:
+        st.info("Nenhuma coluna válida selecionada. Selecione colunas para visualizar a tabela.")
+    else:
+        st.dataframe(tabela_full[existing].head(mostrar), height=640)
+
+    # download das colunas padrão existentes
+    download_cols = [c for c in ["data_hora", "segurado", "canal", "conteudo", "tipo_evento", "integracao"] if c in tabela_full.columns]
+    csv_bytes_all = baixar_csv_bytes(tabela_full[download_cols])
     st.download_button("Download dados completos (CSV)", data=csv_bytes_all, file_name="dados_completos.csv", mime="text/csv")
