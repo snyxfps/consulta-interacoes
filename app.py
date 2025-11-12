@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import json
 
-# Autenticação com Google Sheets via segredo
+# Autenticação com Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 try:
     gcp_key = json.loads(st.secrets["gcp_key"])
@@ -14,18 +14,16 @@ try:
     sheet = client.open_by_key("1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE").sheet1
     dados = sheet.get_all_records()
 except Exception as e:
-    st.error("❌ Erro ao conectar com a planilha. Verifique a chave e permissões.")
+    st.error("❌ Erro ao conectar com a planilha.")
     st.stop()
 
-# Converte para DataFrame
 df = pd.DataFrame(dados)
 try:
     df["data_hora"] = pd.to_datetime(df["data_hora"], format="%d/%m/%Y %H:%M")
 except:
-    st.error("⚠️ Erro ao interpretar datas. Verifique o formato na planilha.")
+    st.error("⚠️ Erro ao interpretar datas.")
     st.stop()
 
-# Função para interpretar status
 def interpretar_status(texto):
     texto = texto.lower()
     if "reunião marcada" in texto or "agendada" in texto:
@@ -39,7 +37,6 @@ def interpretar_status(texto):
     else:
         return "ℹ️ Interação em andamento, sem definição clara ainda."
 
-# Interface com abas
 aba = st.sidebar.radio("Escolha uma aba:", ["📊 Análise por filtros", "🗣️ Modo Conversacional"])
 
 if aba == "📊 Análise por filtros":
@@ -142,7 +139,10 @@ elif aba == "🗣️ Modo Conversacional":
             if not resposta:
                 resposta = "ℹ️ Para mostrar interações, inclua o nome do cliente na pergunta."
 
-        elif "canal mais usado" in pergunta_lower:
+        elif any(frase in pergunta_lower for frase in [
+            "canal mais usado", "canal que eu mais utilizo", "canal mais utilizado",
+            "qual canal eu uso mais", "canal utilizo para tratar", "canal que uso para tratar"
+        ]):
             for nome in df["segurado"].unique():
                 if nome.lower() in pergunta_lower:
                     filtro = df[df["segurado"].str.lower() == nome.lower()]
