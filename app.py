@@ -67,23 +67,32 @@ if st.button("Analisar"):
 📨 **Canal mais utilizado:** {canal_mais_usado}
 """)
 
-        # 📌 Status atual
-        st.subheader("📌 Status atual da interação")
+        # 📌 Status atual ou top 3 status
+        st.subheader("📌 Status atual da interação" if cliente else "📌 Top 3 status mais comuns")
+
+        def interpretar_status(texto):
+            texto = texto.lower()
+            if "reunião marcada" in texto or "agendada" in texto:
+                return "✅ Reunião já foi marcada."
+            elif "solicitei retorno" in texto or "cobrando disponibilidade" in texto:
+                return "⏳ Aguardando retorno para agendar."
+            elif "enviei e-mail" in texto or "contato inicial" in texto:
+                return "📨 Contato inicial realizado, aguardando resposta."
+            elif "finalizado" in texto:
+                return "🏁 Processo finalizado."
+            else:
+                return "ℹ️ Interação em andamento, sem definição clara ainda."
+
         ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
-        conteudos = " ".join(ultimas["conteudo"].str.lower())
-
-        if "reunião marcada" in conteudos or "agendada" in conteudos:
-            status = "✅ Reunião já foi marcada."
-        elif "solicitei retorno" in conteudos or "cobrando disponibilidade" in conteudos:
-            status = "⏳ Aguardando retorno para agendar."
-        elif "enviei e-mail" in conteudos or "contato inicial" in conteudos:
-            status = "📨 Contato inicial realizado, aguardando resposta."
-        elif "finalizado" in conteudos:
-            status = "🏁 Processo finalizado."
+        if cliente:
+            conteudos = " ".join(ultimas["conteudo"].astype(str))
+            status = interpretar_status(conteudos)
+            st.markdown(f"**{status}**")
         else:
-            status = "ℹ️ Interação em andamento, sem definição clara ainda."
-
-        st.markdown(f"**{status}**")
+            todos_status = filtro["conteudo"].astype(str).apply(interpretar_status)
+            top_status = todos_status.value_counts().head(3)
+            for s, count in top_status.items():
+                st.markdown(f"- {s} ({count} ocorrências)")
 
         # 🕒 Últimas 3 interações
         st.subheader("🕒 Últimas 3 interações")
