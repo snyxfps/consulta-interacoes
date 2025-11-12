@@ -18,7 +18,7 @@ try:
     gcp_key = json.loads(st.secrets["gcp_key"])
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
     client = gspread.authorize(creds)
-    sheet = client.open_by_key("1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE").sheet1
+    sheet = client.open_by_key("1VLps1Bi6lc2NX1Bk227ctqBpT0prJa3g4I6KrlXotfo").sheet1
     dados = sheet.get_all_records()
 except Exception as e:
     st.error("❌ Erro ao conectar com a planilha. Verifique as credenciais em st.secrets.")
