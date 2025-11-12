@@ -29,29 +29,28 @@ except:
 
 # Interface
 st.title("📊 Análise de Interações com Segurados")
-
-# Filtro por integração
-integracao = st.text_input("Digite o nome da integração (ex: RCV):").strip().upper()
+integracao = st.text_input("Filtrar por integração (ex: RCV) — ou deixe em branco para ver tudo:").strip().upper()
 
 if st.button("Analisar"):
-    if not integracao:
-        st.warning("Digite o nome da integração para filtrar.")
-    else:
+    # Aplica filtro se houver integração
+    if integracao:
         filtro = df[df["integracao"].str.upper() == integracao]
+    else:
+        filtro = df.copy()
 
-        if filtro.empty:
-            st.warning("⚠️ Nenhuma interação encontrada para essa integração.")
-        else:
-            total = len(filtro)
-            primeira = filtro["data_hora"].min()
-            ultima = filtro["data_hora"].max()
-            dias_desde_primeira = (datetime.now() - primeira).days
-            canal_mais_usado = filtro["canal"].value_counts().idxmax()
-            tipo_por_mes = filtro.groupby([filtro["data_hora"].dt.to_period("M"), "tipo_evento"]).size().unstack(fill_value=0)
-            canais = filtro["canal"].value_counts()
-            tipos = filtro["tipo_evento"].value_counts()
+    if filtro.empty:
+        st.warning("⚠️ Nenhuma interação encontrada.")
+    else:
+        total = len(filtro)
+        primeira = filtro["data_hora"].min()
+        ultima = filtro["data_hora"].max()
+        dias_desde_primeira = (datetime.now() - primeira).days
+        canal_mais_usado = filtro["canal"].value_counts().idxmax()
+        tipo_por_mes = filtro.groupby([filtro["data_hora"].dt.to_period("M"), "tipo_evento"]).size().unstack(fill_value=0)
+        canais = filtro["canal"].value_counts()
+        tipos = filtro["tipo_evento"].value_counts()
 
-            st.markdown(f"""
+        st.markdown(f"""
 **🔎 Total de interações:** {total}  
 **📅 Primeira interação:** {primeira.strftime('%d/%m/%Y %H:%M')}  
 **📅 Última interação:** {ultima.strftime('%d/%m/%Y %H:%M')}  
@@ -59,11 +58,11 @@ if st.button("Analisar"):
 **📨 Canal mais utilizado:** {canal_mais_usado}
 """)
 
-            st.subheader("📈 Interações por tipo de evento")
-            st.dataframe(tipos)
+        st.subheader("📈 Interações por tipo de evento")
+        st.dataframe(tipos)
 
-            st.subheader("📬 Interações por canal")
-            st.dataframe(canais)
+        st.subheader("📬 Interações por canal")
+        st.dataframe(canais)
 
-            st.subheader("📆 Cobranças e Inícios por mês")
-            st.dataframe(tipo_por_mes)
+        st.subheader("📆 Cobranças e Inícios por mês")
+        st.dataframe(tipo_por_mes)
