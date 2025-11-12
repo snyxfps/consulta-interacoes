@@ -18,22 +18,24 @@ except Exception as e:
     st.stop()
 
 # Interface Streamlit
-st.title("🔍 Consulta de Integrações com Segurados")
+st.title("🔍 Consulta de Interações com Segurados")
 pergunta = st.text_input("Digite o nome do cliente:")
 
 # Função de correspondência aproximada
 def similar(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
-# Busca inteligente e segura
+# Busca inteligente e flexível
 def buscar_interacoes(pergunta, dados):
     if not pergunta.strip():
         return "⚠️ Digite um nome para buscar."
 
+    pergunta = pergunta.lower()
     resultados = []
+
     for linha in dados:
         nome = linha.get('segurado', '').lower()
-        if similar(pergunta, nome) > 0.6:
+        if similar(pergunta, nome) > 0.6 or pergunta in nome:
             resultados.append(linha)
 
     if not resultados:
