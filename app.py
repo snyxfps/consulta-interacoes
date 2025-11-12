@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import json
 
-# Autenticação com Google Sheets
+# Autenticação com Google Sheets via segredo
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 try:
     gcp_key = json.loads(st.secrets["gcp_key"])
@@ -14,16 +14,18 @@ try:
     sheet = client.open_by_key("1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE").sheet1
     dados = sheet.get_all_records()
 except Exception as e:
-    st.error("❌ Erro ao conectar com a planilha.")
+    st.error("❌ Erro ao conectar com a planilha. Verifique a chave e permissões.")
     st.stop()
 
+# Converte para DataFrame
 df = pd.DataFrame(dados)
 try:
     df["data_hora"] = pd.to_datetime(df["data_hora"], format="%d/%m/%Y %H:%M")
 except:
-    st.error("⚠️ Erro ao interpretar datas.")
+    st.error("⚠️ Erro ao interpretar datas. Verifique o formato na planilha.")
     st.stop()
 
+# Função para interpretar status
 def interpretar_status(texto):
     texto = texto.lower()
     if "reunião marcada" in texto or "agendada" in texto:
@@ -37,7 +39,9 @@ def interpretar_status(texto):
     else:
         return "ℹ️ Interação em andamento, sem definição clara ainda."
 
+# Interface com abas
 aba = st.sidebar.radio("Escolha uma aba:", ["📊 Análise por filtros", "🗣️ Modo Conversacional"])
+
 if aba == "📊 Análise por filtros":
     st.title("📊 Análise de Interações com Segurados")
 
@@ -105,3 +109,58 @@ if aba == "📊 Análise por filtros":
 
             st.subheader("🔗 Percentual por integração")
             st.dataframe(integracoes_pct)
+
+elif aba == "🗣️ Modo Conversacional":
+    st.title("🗣️ Modo Conversacional")
+    pergunta = st.text_input("Digite sua pergunta:")
+
+    if pergunta:
+        pergunta_lower = pergunta.lower()
+        resposta = ""
+
+        if "status" in pergunta_lower:
+            for nome in df["segurado"].unique():
+                if nome.lower() in pergunta_lower:
+                    filtro = df[df["segurado"].str.lower() == nome.lower()]
+                    ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
+                    conteudos = " ".join(ultimas["conteudo"].astype(str))
+                    status = interpretar_status(conteudos)
+                    resposta = f"📌 Status atual para **{nome}**:\n\n{status}"
+                    break
+            if not resposta:
+                resposta = "ℹ️ Para responder sobre status, inclua o nome do cliente na pergunta."
+
+        elif "o que foi feito" in pergunta_lower or "últimas interações" in pergunta_lower:
+            for nome in df["segurado"].unique():
+                if nome.lower() in pergunta_lower:
+                    filtro = df[df["segurado"].str.lower() == nome.lower()]
+                    ultimas = filtro.sort_values(by="data_hora", ascending=False).head(3)
+                    resposta = f"🕒 Últimas interações com **{nome}**:\n\n"
+                    for _, row in ultimas.iterrows():
+                        resposta += f"- {row['data_hora'].strftime('%d/%m/%Y %H:%M')} via {row['canal']}: {row['conteudo']}\n"
+                    break
+            if not resposta:
+                resposta = "ℹ️ Para mostrar interações, inclua o nome do cliente na pergunta."
+
+        elif "canal mais usado" in pergunta_lower:
+            for nome in df["segurado"].unique():
+                if nome.lower() in pergunta_lower:
+                    filtro = df[df["segurado"].str.lower() == nome.lower()]
+                    canal = filtro["canal"].value_counts().idxmax()
+                    resposta = f"📨 Canal mais utilizado com **{nome}**: {canal}"
+                    break
+            if not resposta:
+                canal = df["canal"].value_counts().idxmax()
+                resposta = f"📨 Canal mais utilizado no geral: {canal}"
+
+        elif "quantas cobranças" in pergunta_lower:
+            filtro = df[df["tipo_evento"].str.lower() == "cobrança"]
+            por_mes = filtro.groupby(filtro["data_hora"].dt.to_period("M")).size()
+            resposta = "📆 Cobranças por mês:\n\n"
+            for periodo, qtd in por_mes.items():
+                resposta += f"- {periodo.strftime('%b/%Y')}: {qtd}\n"
+
+        else:
+            resposta = "🤖 Ainda estou aprendendo a entender esse tipo de pergunta. Tente incluir palavras como 'status', 'últimas interações', 'canal mais usado', ou 'quantas cobranças'."
+
+        st.markdown(resposta)
