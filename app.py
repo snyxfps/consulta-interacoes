@@ -76,7 +76,6 @@ def interpretar_status(texto):
 def gerar_bar_chart(series: pd.Series, titulo: str, horizontal: bool = False):
     df_plot = series.reset_index()
     df_plot.columns = ["categoria", "quantidade"]
-    # converter categoria para string (pode ser Period)
     df_plot["categoria"] = df_plot["categoria"].astype(str)
     if horizontal:
         chart = alt.Chart(df_plot).mark_bar().encode(
@@ -189,7 +188,7 @@ if aba == "📊 Análise por filtros":
 # --------------------------
 elif aba == "🗣️ Modo Conversacional":
     st.title("🗣️ Modo Conversacional")
-    st.write("Faça perguntas em linguagem natural. Exemplos: 'qual o canal que eu mais utilizo?', 'me mostra gráfico por integração', 'qual integração mais usada', 'o que foi feito com 5 Rodas'.")
+    st.write("Faça perguntas em linguagem natural. Exemplos: 'qual o canal que eu mais utilizo?', 'me mostra gráfico por integração', 'qual integração mais usada', 'o que foi feito com 5 Rodas', 'quantos dias faz desde a última interação'.")
 
     pergunta = st.text_input("Digite sua pergunta:", value="", key="pergunta_input")
     executar = st.button("Enviar pergunta")
@@ -200,6 +199,36 @@ elif aba == "🗣️ Modo Conversacional":
         show_plot = False
         plot_obj = None
         tabela_para_baixar = None
+
+        # Intenção: quantos dias desde a última interação
+        dias_intents = [
+            "quantos dias", "dias desde", "quantos dias faz", "há quantos dias", "dias desde a última interação",
+            "dias desde a ultima interação", "quanto tempo desde a última interação", "quanto tempo desde a ultima interação"
+        ]
+        if any(k in t for k in dias_intents):
+            cliente_detectado = None
+            for nome in df["segurado"].unique():
+                if nome.lower() in t:
+                    cliente_detectado = nome
+                    break
+            if cliente_detectado:
+                filtro_c = df[df["segurado"].str.lower() == cliente_detectado.lower()]
+                if filtro_c.empty or filtro_c["data_hora"].dropna().empty:
+                    resp_lines.append(f"ℹ️ Não encontrei datas de interação para **{cliente_detectado}**.")
+                else:
+                    ultima = filtro_c["data_hora"].max()
+                    dias = (datetime.now() - ultima).days
+                    resp_lines.append(f"🕒 Última interação com **{cliente_detectado}** foi em {ultima.strftime('%d/%m/%Y %H:%M')} — há **{dias} dias**.")
+                    tabela_para_baixar = filtro_c.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
+            else:
+                if df["data_hora"].dropna().empty:
+                    resp_lines.append("ℹ️ Não há datas de interação na planilha.")
+                else:
+                    ultima = df["data_hora"].max()
+                    dias = (datetime.now() - ultima).days
+                    resp_lines.append(f"🕒 Última interação registrada foi em {ultima.strftime('%d/%m/%Y %H:%M')} — há **{dias} dias**.")
+                    tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
+            return {"text": "\n".join(resp_lines), "plot": None, "show_plot": False, "table": tabela_para_baixar}
 
         # Intenção: canal mais usado
         canal_intents = [
@@ -230,7 +259,6 @@ elif aba == "🗣️ Modo Conversacional":
                 plot_obj = gerar_bar_chart(cont, "Interações por canal - Geral")
                 show_plot = True
                 tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-
             return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": show_plot, "table": tabela_para_baixar}
 
         # Intenção: integração mais usada
@@ -263,7 +291,6 @@ elif aba == "🗣️ Modo Conversacional":
                 plot_obj = gerar_bar_chart(cont, "Interações por integração - Geral")
                 show_plot = True
                 tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
-
             return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": show_plot, "table": tabela_para_baixar}
 
         # Intenção: gráfico específico
@@ -324,8 +351,14 @@ elif aba == "🗣️ Modo Conversacional":
             tabela_para_baixar = filtro_cobr[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
             return {"text": "\n".join(resp_lines), "plot": plot_obj, "show_plot": True, "table": tabela_para_baixar}
 
+        # Intenção: mostrar tudo / exportar tudo
+        if "tudo" in t or "todas as perguntas" in t or "me dá tudo" in t or "quero tudo" in t:
+            resp_lines.append("📁 Você pode baixar todos os dados da planilha. Estou mostrando os primeiros registros abaixo e liberando o download.")
+            tabela_para_baixar = df.sort_values("data_hora", ascending=False)[["data_hora","segurado","canal","tipo_evento","integracao","conteudo"]]
+            return {"text": "\n".join(resp_lines), "show_plot": False, "table": tabela_para_baixar}
+
         # Caso não entenda
-        resp_lines.append("🤖 Ainda estou aprendendo a entender esse tipo de pergunta. Tente incluir palavras como 'status', 'últimas interações', 'canal', 'integração', 'gráfico', ou 'cobranças'.")
+        resp_lines.append("🤖 Ainda estou aprendendo a entender esse tipo de pergunta. Tente incluir palavras como 'status', 'últimas interações', 'canal', 'integração', 'gráfico', 'cobranças', 'quantos dias'.")
         return {"text": "\n".join(resp_lines), "show_plot": False, "table": None}
 
     if executar and pergunta.strip():
@@ -367,4 +400,4 @@ elif aba == "📁 Dados completos":
 st.sidebar.markdown("---")
 st.sidebar.write("Dicas de uso:")
 st.sidebar.write("- No Modo Conversacional, mencione o nome do cliente para respostas específicas.")
-st.sidebar.write("- Termos úteis: canal, integração, gráfico, últimas interações, cobranças, status.")
+st.sidebar.write("- Termos úteis: canal, integração, gráfico, últimas interações, cobranças, status, quantos dias.")
