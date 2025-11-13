@@ -136,7 +136,7 @@ df["ano_mes"] = df["data_hora_parsed"].dt.to_period("M")
 df["conteudo_lower"] = df["conteudo"].str.lower()
 
 # --------------------------
-# UI: topo (Abrir abas + Atualizar)
+# UI: topo (Abrir abas + Recarregar dados robusto)
 # --------------------------
 if "show_tabs" not in st.session_state:
     st.session_state.show_tabs = False
@@ -145,10 +145,27 @@ col1, col2, col3, col4 = st.columns([1,6,2,1])
 with col2:
     if st.button("Abrir abas"):
         st.session_state.show_tabs = True
+
 with col3:
     if st.button("🔄 Recarregar dados"):
-        st.session_state.clear()
-        st.experimental_rerun()
+        try:
+            # tenta limpar o estado e forçar rerun; st.experimental_rerun pode levantar AttributeError em algumas builds
+            st.session_state.clear()
+            st.experimental_rerun()
+        except AttributeError:
+            # fallback: setamos flag e paramos a execução atual; o usuário deve recarregar a página manualmente (F5)
+            st.session_state["_needs_reload"] = True
+            st.stop()
+        except Exception:
+            st.error("Falha ao tentar recarregar automaticamente. Recarregue a página manualmente.")
+            with st.expander("Detalhes do erro (debug)"):
+                st.text(traceback.format_exc())
+            st.stop()
+
+# Se chegarmos aqui por fallback e há o flag, informamos e limpamos o flag
+if st.session_state.get("_needs_reload"):
+    st.info("Recarregamento pendente. Recarregue a página (F5) para aplicar as mudanças.")
+    del st.session_state["_needs_reload"]
 
 if not st.session_state.show_tabs:
     st.markdown("<br/><br/><h2 style='text-align:center'>Clique em Abrir abas para começar</h2>", unsafe_allow_html=True)
@@ -193,7 +210,6 @@ if aba == "Análise por filtros":
     with st.expander("Filtros rápidos", expanded=True):
         col1, col2, col3 = st.columns([3, 2, 2])
         with col1:
-            # Selectbox é pesquisável; evita erro de digitação do usuário
             cliente_filtro = st.selectbox("Filtrar por cliente (escolha pesquisando):", options=segurados_options, index=0)
         with col2:
             integracao_filtro = st.text_input("Filtrar por integração (ex: RCV):").strip()
