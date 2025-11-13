@@ -2,7 +2,7 @@
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 import altair as alt
 import json
@@ -98,9 +98,7 @@ if missing:
 for c in ["segurado", "canal", "conteudo", "tipo_evento", "integracao"]:
     df[c] = df[c].astype(str).str.strip()
 
-# --------------------------
-# Datas: conversão robusta (aceita serial Excel ou strings)
-# --------------------------
+# Conversão robusta de datas (aceita serial Excel e strings)
 def excel_serial_to_datetime(serial):
     try:
         return pd.to_datetime(float(serial), unit='d', origin='1899-12-30')
@@ -129,6 +127,7 @@ def parse_date_value(v):
     except:
         return pd.NaT
 
+# cria colunas derivadas no DataFrame original (antes de renomear colunas)
 df["data_hora_parsed"] = df["data_hora"].apply(parse_date_value)
 df["data_hora_fmt"] = df["data_hora_parsed"].dt.strftime("%d/%m/%Y %H:%M")
 df.loc[df["data_hora_parsed"].isna(), "data_hora_fmt"] = ""
@@ -149,11 +148,9 @@ with col2:
 with col3:
     if st.button("🔄 Recarregar dados"):
         try:
-            # tenta limpar o estado e forçar rerun; st.experimental_rerun pode levantar AttributeError em algumas builds
             st.session_state.clear()
             st.experimental_rerun()
         except AttributeError:
-            # fallback: setamos flag e paramos a execução atual; o usuário deve recarregar a página manualmente (F5)
             st.session_state["_needs_reload"] = True
             st.stop()
         except Exception:
@@ -162,7 +159,6 @@ with col3:
                 st.text(traceback.format_exc())
             st.stop()
 
-# Se chegarmos aqui por fallback e há o flag, informamos e limpamos o flag
 if st.session_state.get("_needs_reload"):
     st.info("Recarregamento pendente. Recarregue a página (F5) para aplicar as mudanças.")
     del st.session_state["_needs_reload"]
@@ -174,34 +170,50 @@ if not st.session_state.show_tabs:
 # --------------------------
 # Prepare tabela_full com colunas únicas
 # --------------------------
-tabela_full = df.copy().rename(columns={"data_hora_fmt": "data_hora"})
+tabela_full = df.copy()
+# renomeia coluna de exibição e garante unicidade de colunas
+if "data_hora_fmt" in tabela_full.columns:
+    tabela_full = tabela_full.rename(columns={"data_hora_fmt": "data_hora"})
 tabela_full = make_unique_cols(tabela_full)
 available_cols = tabela_full.columns.tolist()
+
+# cria coluna datetime consistente para filtros/ordenacao (não dependemos do nome original)
+# tenta localizar a coluna exibida de data_hora (pode ser 'data_hora' ou 'data_hora_1' etc) e a parsed original
+def find_col(prefix, cols):
+    for c in cols:
+        if c == prefix or c.startswith(prefix + "_"):
+            return c
+    return None
+
+# localiza coluna que contém os valores originais de data_hora (após make_unique_cols)
+col_data_display = find_col("data_hora", tabela_full.columns)
+# preferir coluna já parseada se existir (data_hora_parsed ou data_hora_parsed_1)
+col_parsed = find_col("data_hora_parsed", tabela_full.columns)
+# se não existir parsed (raro), criar a partir da coluna display
+if col_parsed is None and col_data_display is not None:
+    tabela_full["data_hora_parsed_internal"] = pd.to_datetime(tabela_full[col_data_display], dayfirst=True, errors='coerce')
+    col_parsed = "data_hora_parsed_internal"
+elif col_parsed is None:
+    tabela_full["data_hora_parsed_internal"] = pd.NaT
+    col_parsed = "data_hora_parsed_internal"
 
 # --------------------------
 # Seção principal: seleção de abas
 # --------------------------
 aba = st.radio("Escolha uma aba:", ["Análise por filtros", "Dados completos"], horizontal=True)
 
+# localizar outras colunas fundamentais (após make_unique_cols)
+col_seg = find_col("segurado", tabela_full.columns)
+col_canal = find_col("canal", tabela_full.columns)
+col_conteudo = find_col("conteudo", tabela_full.columns)
+col_tipo = find_col("tipo_evento", tabela_full.columns)
+col_integr = find_col("integracao", tabela_full.columns)
+
 # --------------------------
-# A - Análise por filtros (com seleção pesquisável de segurado)
+# A - Análise por filtros (correção: usa coluna datetime interna para filtrar)
 # --------------------------
 if aba == "Análise por filtros":
     st.title("Análise de Interações com Segurados")
-
-    # localizar colunas reais (primeiras ocorrências)
-    def find_col(prefix):
-        for c in tabela_full.columns:
-            if c == prefix or c.startswith(prefix + "_"):
-                return c
-        return None
-
-    col_data = find_col("data_hora")
-    col_seg = find_col("segurado")
-    col_canal = find_col("canal")
-    col_conteudo = find_col("conteudo")
-    col_tipo = find_col("tipo_evento")
-    col_integr = find_col("integracao")
 
     # Lista de segurados única e ordenada para seleção pesquisável
     segurados = sorted([s for s in tabela_full[col_seg].dropna().astype(str).unique()]) if col_seg else []
@@ -218,11 +230,23 @@ if aba == "Análise por filtros":
             if col_tipo:
                 tipos = sorted(tabela_full[col_tipo].dropna().astype(str).unique().tolist())
             tipo_filtro = st.selectbox("Filtrar por tipo de evento", options=["Todos"] + tipos)
-        col4, col5 = st.columns([1, 1])
-        with col4:
-            periodo_de = st.date_input("Data inicial (a partir de)", value=None)
-        with col5:
-            periodo_ate = st.date_input("Data final (até)", value=None)
+        st.write("")  # espaçamento
+        use_date_filter = st.checkbox("Ativar filtro por data", value=False)
+        min_date = pd.to_datetime(tabela_full[col_parsed], errors='coerce').min()
+        max_date = pd.to_datetime(tabela_full[col_parsed], errors='coerce').max()
+        if pd.isna(min_date):
+            min_date = date.today()
+        if pd.isna(max_date):
+            max_date = date.today()
+        if use_date_filter:
+            col4, col5 = st.columns([1, 1])
+            with col4:
+                periodo_de = st.date_input("Data inicial (a partir de)", value=min_date.date())
+            with col5:
+                periodo_ate = st.date_input("Data final (até)", value=max_date.date())
+        else:
+            periodo_de = None
+            periodo_ate = None
 
     filtro = tabela_full.copy()
 
@@ -232,18 +256,22 @@ if aba == "Análise por filtros":
         filtro = filtro[filtro[col_integr].astype(str).str.lower() == integracao_filtro.lower()]
     if tipo_filtro and tipo_filtro != "Todos" and col_tipo:
         filtro = filtro[filtro[col_tipo].astype(str) == tipo_filtro]
-    if periodo_de and col_data:
-        filtro = filtro[pd.to_datetime(filtro[col_data], dayfirst=True, errors='coerce') >= pd.to_datetime(periodo_de)]
-    if periodo_ate and col_data:
-        filtro = filtro[pd.to_datetime(filtro[col_data], dayfirst=True, errors='coerce') <= pd.to_datetime(periodo_ate) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)]
+
+    # filtros de data: usar a coluna parsed interna (col_parsed)
+    if periodo_de is not None and col_parsed:
+        start_dt = pd.to_datetime(periodo_de)
+        filtro = filtro[pd.to_datetime(filtro[col_parsed], errors='coerce') >= start_dt]
+    if periodo_ate is not None and col_parsed:
+        end_dt = pd.to_datetime(periodo_ate) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        filtro = filtro[pd.to_datetime(filtro[col_parsed], errors='coerce') <= end_dt]
 
     if filtro.empty:
         st.warning("Nenhuma interação encontrada com esses filtros.")
     else:
         total = len(filtro)
         try:
-            primeira = pd.to_datetime(filtro[col_data], dayfirst=True, errors='coerce').min() if col_data else pd.NaT
-            ultima = pd.to_datetime(filtro[col_data], dayfirst=True, errors='coerce').max() if col_data else pd.NaT
+            primeira = pd.to_datetime(filtro[col_parsed], errors='coerce').min() if col_parsed else pd.NaT
+            ultima = pd.to_datetime(filtro[col_parsed], errors='coerce').max() if col_parsed else pd.NaT
         except Exception:
             primeira = ultima = pd.NaT
         dias_desde_primeira = (datetime.now() - primeira).days if pd.notna(primeira) else None
@@ -270,7 +298,10 @@ if aba == "Análise por filtros":
                     st.altair_chart(gerar_bar_chart(cont_int, "Interações por integração"), use_container_width=True)
 
         st.subheader("Status (interpretação automática)")
-        ultimas_three = filtro.sort_values(by=col_data, ascending=False).head(3) if col_data else filtro.head(3)
+        if col_parsed:
+            ultimas_three = filtro.assign(_parsed=pd.to_datetime(filtro[col_parsed], errors='coerce')).sort_values("_parsed", ascending=False).head(3)
+        else:
+            ultimas_three = filtro.head(3)
         if cliente_filtro and cliente_filtro != "Todos" and not ultimas_three.empty and col_conteudo:
             conteudos = " ".join(ultimas_three[col_conteudo].astype(str))
             st.write(f"Status atual para **{cliente_filtro}**: ", interpretar_status(conteudos))
@@ -280,12 +311,16 @@ if aba == "Análise por filtros":
                 st.table(status_series.rename_axis("Status").reset_index(name="Ocorrências"))
 
         st.subheader("Últimas interações")
-        display_cols = [c for c in [col_data, col_seg, col_canal, col_tipo, col_integr, col_conteudo] if c]
-        st.dataframe(filtro.sort_values(by=col_data if col_data else filtro.columns[0], ascending=False)[display_cols].head(50), height=480)
+        display_cols = [c for c in [col_data_display, col_seg, col_canal, col_tipo, col_integr, col_conteudo] if c]
+        if col_parsed:
+            filtro_sorted = filtro.assign(_parsed=pd.to_datetime(filtro[col_parsed], errors='coerce')).sort_values("_parsed", ascending=False)
+            st.dataframe(filtro_sorted[display_cols].head(50), height=480)
+        else:
+            st.dataframe(filtro.sort_values(by=display_cols[0], ascending=False)[display_cols].head(50), height=480)
 
         st.subheader("Interações por mês")
-        if col_data:
-            cont_mes = pd.to_datetime(filtro[col_data], dayfirst=True, errors='coerce').dt.to_period("M").value_counts().sort_index()
+        if col_parsed:
+            cont_mes = pd.to_datetime(filtro[col_parsed], errors='coerce').dt.to_period("M").value_counts().sort_index()
             cont_mes.index = cont_mes.index.astype(str)
             st.altair_chart(gerar_bar_chart(cont_mes, "Interações por mês"), use_container_width=True)
 
@@ -294,8 +329,8 @@ if aba == "Análise por filtros":
         out_cols_map = {}
         for logical, real_prefix in [("data_hora", "data_hora"), ("segurado", "segurado"), ("canal", "canal"),
                                      ("conteudo", "conteudo"), ("tipo_evento", "tipo_evento"), ("integracao", "integracao")]:
-            real = find_col(real_prefix)
-            if real:
+            real = find_col(real_prefix, tabela_full.columns)
+            if real and real in output_df.columns:
                 out_cols_map[real] = logical
         if out_cols_map:
             csv_df = output_df[list(out_cols_map.keys())].rename(columns=out_cols_map)
@@ -305,7 +340,7 @@ if aba == "Análise por filtros":
         st.download_button("Download dos dados filtrados (CSV)", data=csv_bytes, file_name="interacoes_filtradas.csv", mime="text/csv")
 
 # --------------------------
-# B - Dados completos
+# B - Dados completos (ordenação/filtragem por datetime corrigida)
 # --------------------------
 elif aba == "Dados completos":
     st.title("Dados completos da planilha")
@@ -326,13 +361,18 @@ elif aba == "Dados completos":
     if missing_cols:
         st.warning(f"As colunas a seguir não existem e foram ignoradas: {missing_cols}")
 
-    if ordenar != "Nenhum" and ordenar in tabela_full.columns:
-        tabela_full = tabela_full.sort_values(by=ordenar, ascending=asc)
+    tabela_display = tabela_full.copy()
+    # se o usuário pedir para ordenar por data_hora, garantir que usamos a coluna parsed para ordenar
+    if ordenar != "Nenhum":
+        if ordenar.startswith("data_hora") and col_parsed:
+            tabela_display = tabela_display.assign(_parsed=pd.to_datetime(tabela_display[col_parsed], errors='coerce')).sort_values("_parsed", ascending=asc)
+        elif ordenar in tabela_display.columns:
+            tabela_display = tabela_display.sort_values(by=ordenar, ascending=asc)
 
     if not existing:
         st.info("Nenhuma coluna válida selecionada. Selecione colunas para visualizar a tabela.")
     else:
-        st.dataframe(tabela_full[existing].head(mostrar), height=640)
+        st.dataframe(tabela_display[existing].head(mostrar), height=640)
 
     download_cols = [c for c in ["data_hora", "segurado", "canal", "conteudo", "tipo_evento", "integracao"] if c in tabela_full.columns]
     csv_bytes_all = baixar_csv_bytes(tabela_full[download_cols])
