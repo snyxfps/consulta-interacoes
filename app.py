@@ -15,7 +15,7 @@ st.set_page_config(layout="wide", page_title="Interações - Dashboard", initial
 # --------------------------
 # Config Google Sheets
 # --------------------------
-SHEET_ID = "1VLps1Bi6lc2NX1Bk227ctqBpT0prJa3g4I6KrlXotfo"  # ajuste se necessário
+SHEET_ID = "1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE"  # ajuste se necessário
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 def load_sheet_data():
