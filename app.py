@@ -136,26 +136,29 @@ df["ano_mes"] = df["data_hora_parsed"].dt.to_period("M")
 df["conteudo_lower"] = df["conteudo"].str.lower()
 
 # --------------------------
-# UI: botão no topo para abrir seleção de abas
+# UI: topo (Abrir abas + Atualizar)
 # --------------------------
 if "show_tabs" not in st.session_state:
     st.session_state.show_tabs = False
 
-col1, col2, col3 = st.columns([1,8,1])
+col1, col2, col3, col4 = st.columns([1,6,2,1])
 with col2:
     if st.button("Abrir abas"):
         st.session_state.show_tabs = True
+with col3:
+    if st.button("🔄 Recarregar dados"):
+        st.session_state.clear()
+        st.experimental_rerun()
 
 if not st.session_state.show_tabs:
     st.markdown("<br/><br/><h2 style='text-align:center'>Clique em Abrir abas para começar</h2>", unsafe_allow_html=True)
     st.stop()
 
 # --------------------------
-# Prepare tabela_full com colunas únicas para evitar Duplicate column names
+# Prepare tabela_full com colunas únicas
 # --------------------------
 tabela_full = df.copy().rename(columns={"data_hora_fmt": "data_hora"})
-tabela_full = make_unique_cols(tabela_full)  # corrige colunas duplicadas se houver
-
+tabela_full = make_unique_cols(tabela_full)
 available_cols = tabela_full.columns.tolist()
 
 # --------------------------
@@ -164,33 +167,12 @@ available_cols = tabela_full.columns.tolist()
 aba = st.radio("Escolha uma aba:", ["Análise por filtros", "Dados completos"], horizontal=True)
 
 # --------------------------
-# Aba: Análise por filtros
+# A - Análise por filtros (com seleção pesquisável de segurado)
 # --------------------------
 if aba == "Análise por filtros":
     st.title("Análise de Interações com Segurados")
-    with st.expander("Filtros rápidos", expanded=True):
-        col1, col2, col3 = st.columns([3, 2, 2])
-        with col1:
-            cliente_filtro = st.text_input("Filtrar por cliente (nome exato):").strip()
-        with col2:
-            integracao_filtro = st.text_input("Filtrar por integração (ex: RCV):").strip()
-        with col3:
-            # tenta mapear tipo_evento correto (pode ter sido renomeado por make_unique_cols)
-            tipo_candidates = [c for c in tabela_full.columns if c.startswith("tipo_evento")]
-            tipos = []
-            if tipo_candidates:
-                # coleta valores do primeiro matching column
-                tipos = sorted(tabela_full[tipo_candidates[0]].dropna().unique().tolist())
-            tipo_filtro = st.selectbox("Filtrar por tipo de evento", options=["Todos"] + tipos)
 
-        col4, col5 = st.columns([1, 1])
-        with col4:
-            periodo_de = st.date_input("Data inicial (a partir de)", value=None)
-        with col5:
-            periodo_ate = st.date_input("Data final (até)", value=None)
-
-    # Para filtros, precisamos referenciar as colunas reais dentro de tabela_full
-    # localizar colunas correspondentes (primeira ocorrência)
+    # localizar colunas reais (primeiras ocorrências)
     def find_col(prefix):
         for c in tabela_full.columns:
             if c == prefix or c.startswith(prefix + "_"):
@@ -204,14 +186,36 @@ if aba == "Análise por filtros":
     col_tipo = find_col("tipo_evento")
     col_integr = find_col("integracao")
 
+    # Lista de segurados única e ordenada para seleção pesquisável
+    segurados = sorted([s for s in tabela_full[col_seg].dropna().astype(str).unique()]) if col_seg else []
+    segurados_options = ["Todos"] + segurados
+
+    with st.expander("Filtros rápidos", expanded=True):
+        col1, col2, col3 = st.columns([3, 2, 2])
+        with col1:
+            # Selectbox é pesquisável; evita erro de digitação do usuário
+            cliente_filtro = st.selectbox("Filtrar por cliente (escolha pesquisando):", options=segurados_options, index=0)
+        with col2:
+            integracao_filtro = st.text_input("Filtrar por integração (ex: RCV):").strip()
+        with col3:
+            tipos = []
+            if col_tipo:
+                tipos = sorted(tabela_full[col_tipo].dropna().astype(str).unique().tolist())
+            tipo_filtro = st.selectbox("Filtrar por tipo de evento", options=["Todos"] + tipos)
+        col4, col5 = st.columns([1, 1])
+        with col4:
+            periodo_de = st.date_input("Data inicial (a partir de)", value=None)
+        with col5:
+            periodo_ate = st.date_input("Data final (até)", value=None)
+
     filtro = tabela_full.copy()
 
-    if cliente_filtro and col_seg:
-        filtro = filtro[filtro[col_seg].str.lower() == cliente_filtro.lower()]
+    if cliente_filtro and cliente_filtro != "Todos" and col_seg:
+        filtro = filtro[filtro[col_seg].astype(str).str.lower() == cliente_filtro.lower()]
     if integracao_filtro and col_integr:
-        filtro = filtro[filtro[col_integr].str.lower() == integracao_filtro.lower()]
+        filtro = filtro[filtro[col_integr].astype(str).str.lower() == integracao_filtro.lower()]
     if tipo_filtro and tipo_filtro != "Todos" and col_tipo:
-        filtro = filtro[filtro[col_tipo] == tipo_filtro]
+        filtro = filtro[filtro[col_tipo].astype(str) == tipo_filtro]
     if periodo_de and col_data:
         filtro = filtro[pd.to_datetime(filtro[col_data], dayfirst=True, errors='coerce') >= pd.to_datetime(periodo_de)]
     if periodo_ate and col_data:
@@ -251,7 +255,7 @@ if aba == "Análise por filtros":
 
         st.subheader("Status (interpretação automática)")
         ultimas_three = filtro.sort_values(by=col_data, ascending=False).head(3) if col_data else filtro.head(3)
-        if cliente_filtro and not ultimas_three.empty and col_conteudo:
+        if cliente_filtro and cliente_filtro != "Todos" and not ultimas_three.empty and col_conteudo:
             conteudos = " ".join(ultimas_three[col_conteudo].astype(str))
             st.write(f"Status atual para **{cliente_filtro}**: ", interpretar_status(conteudos))
         else:
@@ -269,9 +273,8 @@ if aba == "Análise por filtros":
             cont_mes.index = cont_mes.index.astype(str)
             st.altair_chart(gerar_bar_chart(cont_mes, "Interações por mês"), use_container_width=True)
 
-        # prepara CSV: renomeia colunas padrão para saída
+        # prepara CSV padronizando colunas de saída quando possível
         output_df = filtro.copy()
-        # garantir colunas de saída padronizadas, se existirem
         out_cols_map = {}
         for logical, real_prefix in [("data_hora", "data_hora"), ("segurado", "segurado"), ("canal", "canal"),
                                      ("conteudo", "conteudo"), ("tipo_evento", "tipo_evento"), ("integracao", "integracao")]:
@@ -286,12 +289,11 @@ if aba == "Análise por filtros":
         st.download_button("Download dos dados filtrados (CSV)", data=csv_bytes, file_name="interacoes_filtradas.csv", mime="text/csv")
 
 # --------------------------
-# Aba: Dados completos
+# B - Dados completos
 # --------------------------
 elif aba == "Dados completos":
     st.title("Dados completos da planilha")
 
-    # available_cols já criado a partir de tabela_full (único)
     cols = st.multiselect(
         "Colunas a exibir",
         options=available_cols,
@@ -316,7 +318,6 @@ elif aba == "Dados completos":
     else:
         st.dataframe(tabela_full[existing].head(mostrar), height=640)
 
-    # download: usa tabela_full mas garante ordem de colunas padrão quando possível
     download_cols = [c for c in ["data_hora", "segurado", "canal", "conteudo", "tipo_evento", "integracao"] if c in tabela_full.columns]
     csv_bytes_all = baixar_csv_bytes(tabela_full[download_cols])
     st.download_button("Download dados completos (CSV)", data=csv_bytes_all, file_name="dados_completos.csv", mime="text/csv")
