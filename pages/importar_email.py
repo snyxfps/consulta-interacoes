@@ -91,7 +91,7 @@ SHEET_ID = "1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE"
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 def append_to_sheet(linha):
-    gcp_key = json.loads(st.secrets["gcp_key"])
+    gcp_key = st.secrets["gcp_key"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
