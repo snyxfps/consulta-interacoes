@@ -33,7 +33,7 @@ def garantir_planilha():
 # -----------------------------------------------------------
 def ler_eml(uploaded_file):
     raw_bytes = uploaded_file.read()
-    msg = message_from_bytes(raw_bytes, strict=False)
+    msg = message_from_bytes(raw_bytes)
 
     assunto = msg.get("Subject", "").strip()
     data = msg.get("Date", "")
