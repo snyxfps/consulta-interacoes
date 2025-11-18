@@ -6,7 +6,6 @@ import re
 from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import json
 import pandas as pd
 
 st.set_page_config(page_title="Importar E-mail", layout="centered")
@@ -61,26 +60,23 @@ def extrair_nome_segurado(assunto):
     m2 = re.search(padrao2, assunto)
     if m2:
         nome = m2.group(1).strip()
-        # remove CNPJ, números
-        nome = re.sub(r"\d{11,14}", "", nome).strip()
+        nome = re.sub(r"\d{11,14}", "", nome).strip()  # remove CNPJ
         return nome
 
-    # fallback → retorna tudo após |
+    # fallback → texto após |
     if "|" in assunto:
         return assunto.split("|")[-1].strip()
 
-    # fallback final
     return assunto.strip()
 
 
 # -------------------------
-# Resumo do corpo (1 linha)
+# Resumo do corpo
 # -------------------------
 def resumir_conteudo(body):
     body = body.replace("\n", " ").strip()
     if len(body) == 0:
         return "Informações recebidas por e-mail."
-    # retorna apenas primeiros 120 caracteres
     return body[:120] + "..." if len(body) > 120 else body
 
 
@@ -88,10 +84,11 @@ def resumir_conteudo(body):
 # Conectar Google Sheets
 # -------------------------
 SHEET_ID = "1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE"
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/drive"]
 
 def append_to_sheet(linha):
-    gcp_key = st.secrets["gcp_key"]
+    gcp_key = st.secrets["gcp_key"]  # JÁ É DICIONÁRIO!
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
