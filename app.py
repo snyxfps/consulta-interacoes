@@ -164,8 +164,8 @@ if st.session_state.get("_needs_reload"):
     del st.session_state["_needs_reload"]
 
 if not st.session_state.show_tabs:
-    st.markdown("<br/><br/><h2 style='text-align:center'>Clique em Abrir abas para começar</h2>", unsafe_allow_html=True)
-    st.stop()
+    st.sidebar.success("📄 Páginas carregadas no menu →")
+    st.markdown("<br/><br/><h2 style='text-align:center'>Clique em Abrir abas para acessar o painel principal</h2>", unsafe_allow_html=True)
 
 # --------------------------
 # Prepare tabela_full com colunas únicas
