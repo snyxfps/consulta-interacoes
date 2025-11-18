@@ -1,155 +1,148 @@
 import streamlit as st
-import pandas as pd
-from email import message_from_bytes
-from dateutil import parser as dateparser
+import email
+from email import policy
+from email.parser import BytesParser
 import re
-import os
+from datetime import datetime
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import json
+import pandas as pd
 
-# Caminho da planilha usada pelo hub (mesmo arquivo!)
-EXCEL_PATH = "Interações com Segurados.xlsx"
-SHEET_NAME = "Interações"
+st.set_page_config(page_title="Importar E-mail", layout="centered")
 
-# -----------------------------------------------------------
-#  Garantir que a planilha exista
-# -----------------------------------------------------------
-def garantir_planilha():
-    if not os.path.exists(EXCEL_PATH):
-        df = pd.DataFrame(columns=[
-            "segurado",
-            "canal",
-            "data_hora",
-            "conteudo",
-            "tipo_evento",
-            "integracao",
-            "cnpj",
-            "apolice"
-        ])
-        df.to_excel(EXCEL_PATH, index=False)
-    return pd.read_excel(EXCEL_PATH)
+st.title("📩 Importador de E-mail (.eml) — Alimentar Planilha")
 
+# -------------------------
+# Ler .eml
+# -------------------------
+def ler_eml(file):
+    raw = file.read()
+    msg = BytesParser(policy=policy.default).parsebytes(raw)
 
-# -----------------------------------------------------------
-#  Ler arquivo .eml
-# -----------------------------------------------------------
-def ler_eml(uploaded_file):
-    raw_bytes = uploaded_file.read()
-    msg = message_from_bytes(raw_bytes)
+    # assunto
+    subject = msg.get("Subject", "")
 
-    assunto = msg.get("Subject", "").strip()
-    data = msg.get("Date", "")
-    corpo = ""
-
-    if msg.is_multipart():
-        for part in msg.walk():
-            content_type = part.get_content_type()
-            if content_type == "text/plain":
-                try:
-                    corpo = part.get_payload(decode=True).decode(errors="replace")
-                except:
-                    pass
-            elif content_type == "text/html" and corpo.strip() == "":
-                try:
-                    corpo = part.get_payload(decode=True).decode(errors="replace")
-                except:
-                    pass
-    else:
-        try:
-            corpo = msg.get_payload(decode=True).decode(errors="replace")
-        except:
-            corpo = ""
-
+    # data
+    date_str = msg.get("Date")
     try:
-        data_convertida = dateparser.parse(data)
+        dt = email.utils.parsedate_to_datetime(date_str)
     except:
-        data_convertida = None
+        dt = datetime.now()
 
-    return assunto, data_convertida, corpo
-
-
-# -----------------------------------------------------------
-#  Extrair informações do assunto
-# -----------------------------------------------------------
-def extrair_info_assunto(assunto):
-
-    assunto_limpo = assunto.upper()
-
-    # Tipo do evento
-    if "INSTALAÇÃO" in assunto_limpo:
-        tipo_evento = "Instalação"
-    elif "CAIXA POSTAL" in assunto_limpo:
-        tipo_evento = "Caixa Postal"
-    elif "ESSOR" in assunto_limpo or "APHICOR" in assunto_limpo:
-        tipo_evento = "Abertura"
+    # corpo
+    if msg.is_multipart():
+        parts = []
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain":
+                try:
+                    parts.append(part.get_content())
+                except:
+                    pass
+        body = "\n".join(parts).strip()
     else:
-        tipo_evento = "Outros"
+        body = msg.get_content().strip()
 
-    # Segurado
-    partes = assunto.split("-")
-    segurado = partes[-1].strip() if len(partes) >= 2 else ""
-
-    # CNPJ
-    cnpj_match = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", assunto)
-    cnpj = cnpj_match.group(0) if cnpj_match else ""
-
-    # Apólice
-    apolice_match = re.search(r"-\s*(\d+)$", assunto)
-    apolice = apolice_match.group(1) if apolice_match else ""
-
-    integracao = "RCV"
-
-    return segurado, tipo_evento, cnpj, apolice, integracao
+    return subject, dt, body
 
 
-# -----------------------------------------------------------
-#  INTERFACE
-# -----------------------------------------------------------
-st.title("📩 Importador de E-mail (.eml) — Alimentar Planilha do Hub")
+# -------------------------
+# Extrair nome do segurado
+# -------------------------
+def extrair_nome_segurado(assunto):
+    # Padrão mais comum: "APHICOR/ESSOR - RC-V | NOME SEGURADO - APOLICE"
+    padrao = r"\|\s*(.*?)\s*-\s*\d"
+    m = re.search(padrao, assunto)
+    if m:
+        return m.group(1).strip()
 
-arquivo = st.file_uploader("Envie um arquivo .eml", type=["eml"])
+    # Caso "INSTALAÇÃO - 59 - Nome Segurado CNPJ"
+    padrao2 = r"-\s*\d+\s*-\s*(.*)"
+    m2 = re.search(padrao2, assunto)
+    if m2:
+        nome = m2.group(1).strip()
+        # remove CNPJ, números
+        nome = re.sub(r"\d{11,14}", "", nome).strip()
+        return nome
 
-if arquivo:
-    assunto, data_hora, conteudo = ler_eml(arquivo)
+    # fallback → retorna tudo após |
+    if "|" in assunto:
+        return assunto.split("|")[-1].strip()
+
+    # fallback final
+    return assunto.strip()
+
+
+# -------------------------
+# Resumo do corpo (1 linha)
+# -------------------------
+def resumir_conteudo(body):
+    body = body.replace("\n", " ").strip()
+    if len(body) == 0:
+        return "Informações recebidas por e-mail."
+    # retorna apenas primeiros 120 caracteres
+    return body[:120] + "..." if len(body) > 120 else body
+
+
+# -------------------------
+# Conectar Google Sheets
+# -------------------------
+SHEET_ID = "1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE"
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+def append_to_sheet(linha):
+    gcp_key = json.loads(st.secrets["gcp_key"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(SHEET_ID).sheet1
+    sheet.append_row(linha, value_input_option="USER_ENTERED")
+
+
+# -------------------------
+# Upload EML
+# -------------------------
+uploaded = st.file_uploader("Envie um arquivo .eml", type=["eml"])
+
+if uploaded:
+    assunto, data_hora, corpo = ler_eml(uploaded)
 
     st.subheader("📌 Assunto detectado")
     st.write(assunto)
 
     st.subheader("📆 Data detectada")
-    st.write(data_hora)
+    st.write(str(data_hora))
 
-    st.subheader("📝 Conteúdo (prévia)")
-    st.write(conteudo[:600] + "..." if len(conteudo) > 600 else conteudo)
+    st.subheader("📝 Corpo (prévia)")
+    st.write(corpo[:500])
 
-    # Extrair informações estruturadas
-    segurado, tipo_evento, cnpj, apolice, integracao = extrair_info_assunto(assunto)
+    # -----------------------------
+    # Montar dados
+    # -----------------------------
+    segurado = extrair_nome_segurado(assunto)
+    canal = "E-mail"
+    dt_fmt = data_hora.strftime("%d/%m/%Y %H:%M")
+    conteudo = resumir_conteudo(corpo)
+    tipo_evento = "Outros"
+    integracao = "RCV"
 
-    st.subheader("✏️ Linha gerada (você pode editar)")
-    segurado = st.text_input("Segurado", segurado)
-    tipo_evento = st.text_input("Tipo Evento", tipo_evento)
-    cnpj = st.text_input("CNPJ", cnpj)
-    apolice = st.text_input("Apólice", apolice)
-    integracao = st.text_input("Integração", integracao)
-
-    df_linha = pd.DataFrame([{
+    st.subheader("📄 Linha gerada")
+    df = pd.DataFrame([{
         "segurado": segurado,
-        "canal": "E-mail",
-        "data_hora": data_hora,
+        "canal": canal,
+        "data_hora": dt_fmt,
         "conteudo": conteudo,
         "tipo_evento": tipo_evento,
-        "integracao": integracao,
-        "cnpj": cnpj,
-        "apolice": apolice
+        "integracao": integracao
     }])
+    st.table(df)
 
-    st.write(df_linha)
-
-    st.download_button(
-        "⬇️ Baixar linha (CSV)",
-        df_linha.to_csv(index=False).encode("utf-8"),
-        "linha.csv"
-    )
-
-    if st.button("💾 Salvar na planilha"):
-        df = garantir_planilha()
-        df = pd.concat([df, df_linha], ignore_index=True)
-        df.to_excel(EXCEL_PATH, index=False)
-        st.success("Linha salva na planilha com sucesso! 🎉")
+    if st.button("Enviar para planilha"):
+        append_to_sheet([
+            segurado,
+            canal,
+            dt_fmt,
+            conteudo,
+            tipo_evento,
+            integracao
+        ])
+        st.success("✔ Linha enviada para a planilha com sucesso!")
