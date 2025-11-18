@@ -3,15 +3,14 @@ import pandas as pd
 from email import message_from_bytes
 from dateutil import parser as dateparser
 import re
-import base64
 import os
 
-# Caminho do arquivo Excel dentro do seu repositório
+# Caminho da planilha usada pelo hub (mesmo arquivo!)
 EXCEL_PATH = "Interações com Segurados.xlsx"
 SHEET_NAME = "Interações"
 
 # -----------------------------------------------------------
-#  FUNÇÃO: Garantir que a planilha exista ou criar se faltar
+#  Garantir que a planilha exista
 # -----------------------------------------------------------
 def garantir_planilha():
     if not os.path.exists(EXCEL_PATH):
@@ -30,7 +29,7 @@ def garantir_planilha():
 
 
 # -----------------------------------------------------------
-#  FUNÇÃO: Leitura e parsing do arquivo .eml
+#  Ler arquivo .eml
 # -----------------------------------------------------------
 def ler_eml(uploaded_file):
     raw_bytes = uploaded_file.read()
@@ -54,7 +53,10 @@ def ler_eml(uploaded_file):
                 except:
                     pass
     else:
-        corpo = msg.get_payload(decode=True).decode(errors="replace")
+        try:
+            corpo = msg.get_payload(decode=True).decode(errors="replace")
+        except:
+            corpo = ""
 
     try:
         data_convertida = dateparser.parse(data)
@@ -65,7 +67,7 @@ def ler_eml(uploaded_file):
 
 
 # -----------------------------------------------------------
-#  FUNÇÃO: Extrair infos do ASSUNTO
+#  Extrair informações do assunto
 # -----------------------------------------------------------
 def extrair_info_assunto(assunto):
 
@@ -81,15 +83,15 @@ def extrair_info_assunto(assunto):
     else:
         tipo_evento = "Outros"
 
-    # Extrair segurado (última parte depois do "-")
+    # Segurado
     partes = assunto.split("-")
     segurado = partes[-1].strip() if len(partes) >= 2 else ""
 
-    # Tentar extrair CNPJ
-    cnpj_match = re.search(r"\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}", assunto)
+    # CNPJ
+    cnpj_match = re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", assunto)
     cnpj = cnpj_match.group(0) if cnpj_match else ""
 
-    # Tentar extrair apólice (números no final depois de "-")
+    # Apólice
     apolice_match = re.search(r"-\s*(\d+)$", assunto)
     apolice = apolice_match.group(1) if apolice_match else ""
 
@@ -99,11 +101,11 @@ def extrair_info_assunto(assunto):
 
 
 # -----------------------------------------------------------
-#  INTERFACE STREAMLIT
+#  INTERFACE
 # -----------------------------------------------------------
-st.title("📩 Importar E-mail (.eml) → Gerar Linha da Planilha")
+st.title("📩 Importador de E-mail (.eml) — Alimentar Planilha do Hub")
 
-arquivo = st.file_uploader("Envie um arquivo .eml:", type=["eml"])
+arquivo = st.file_uploader("Envie um arquivo .eml", type=["eml"])
 
 if arquivo:
     assunto, data_hora, conteudo = ler_eml(arquivo)
@@ -114,14 +116,13 @@ if arquivo:
     st.subheader("📆 Data detectada")
     st.write(data_hora)
 
-    st.subheader("📝 Corpo do e-mail (resumido)")
-    st.write(conteudo[:500] + "..." if len(conteudo) > 500 else conteudo)
+    st.subheader("📝 Conteúdo (prévia)")
+    st.write(conteudo[:600] + "..." if len(conteudo) > 600 else conteudo)
 
-    # Extrair informações
+    # Extrair informações estruturadas
     segurado, tipo_evento, cnpj, apolice, integracao = extrair_info_assunto(assunto)
 
-    # Formulário de edição
-    st.subheader("✏️ Linha gerada (você pode editar antes de salvar)")
+    st.subheader("✏️ Linha gerada (você pode editar)")
     segurado = st.text_input("Segurado", segurado)
     tipo_evento = st.text_input("Tipo Evento", tipo_evento)
     cnpj = st.text_input("CNPJ", cnpj)
@@ -141,24 +142,14 @@ if arquivo:
 
     st.write(df_linha)
 
-    # ---------------------------------------------
-    # Baixar CSV
-    csv_data = df_linha.to_csv(index=False).encode("utf-8")
     st.download_button(
         "⬇️ Baixar linha (CSV)",
-        csv_data,
-        "linha.csv",
-        "text/csv"
+        df_linha.to_csv(index=False).encode("utf-8"),
+        "linha.csv"
     )
 
-    # ---------------------------------------------
-    # Baixar Excel
-    xlsx_data = df_linha.to_excel(index=False).split()[0] if False else None
-
-    # ---------------------------------------------
-    # Salvar na planilha
-    if st.button("💾 Salvar na planilha do sistema"):
+    if st.button("💾 Salvar na planilha"):
         df = garantir_planilha()
         df = pd.concat([df, df_linha], ignore_index=True)
         df.to_excel(EXCEL_PATH, index=False)
-        st.success("Linha salva com sucesso!")
+        st.success("Linha salva na planilha com sucesso! 🎉")
