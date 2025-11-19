@@ -95,7 +95,7 @@ def extrair_nome_segurado(assunto):
 @st.cache_resource
 def get_summarizer():
     # modelo treinado para sumarização em português
-    return pipeline("summarization", model="unicamp-dl/ptt5-base-portuguese-summarization")
+    return pipeline("summarization", model="mrm8488/bert2bert_shared-portuguese-finetuned-summarization")
 
 def resumir_conteudo(body):
     texto = (body or "").strip()
