@@ -8,6 +8,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 from transformers import pipeline
+import json
 
 st.set_page_config(page_title="Importar E-mail", layout="centered")
 
@@ -118,7 +119,8 @@ scope = [
 ]
 
 def append_to_sheet(linha):
-    gcp_key = st.secrets["gcp_key"]
+    # CORREÇÃO: transforma string JSON em dict
+    gcp_key = json.loads(st.secrets["gcp_key"])
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
