@@ -19,17 +19,14 @@ def ler_eml(file):
     raw = file.read()
     msg = BytesParser(policy=policy.default).parsebytes(raw)
 
-    # assunto
     subject = msg.get("Subject", "")
-
-    # data
     date_str = msg.get("Date")
+
     try:
         dt = email.utils.parsedate_to_datetime(date_str)
     except:
         dt = datetime.now()
 
-    # corpo
     if msg.is_multipart():
         parts = []
         for part in msg.walk():
@@ -40,7 +37,10 @@ def ler_eml(file):
                     pass
         body = "\n".join(parts).strip()
     else:
-        body = msg.get_content().strip()
+        try:
+            body = msg.get_content().strip()
+        except:
+            body = ""
 
     return subject, dt, body
 
@@ -49,21 +49,18 @@ def ler_eml(file):
 # Extrair nome do segurado
 # -------------------------
 def extrair_nome_segurado(assunto):
-    # Padrão mais comum: "APHICOR/ESSOR - RC-V | NOME SEGURADO - APOLICE"
     padrao = r"\|\s*(.*?)\s*-\s*\d"
     m = re.search(padrao, assunto)
     if m:
         return m.group(1).strip()
 
-    # Caso "INSTALAÇÃO - 59 - Nome Segurado CNPJ"
     padrao2 = r"-\s*\d+\s*-\s*(.*)"
     m2 = re.search(padrao2, assunto)
     if m2:
         nome = m2.group(1).strip()
-        nome = re.sub(r"\d{11,14}", "", nome).strip()  # remove CNPJ
+        nome = re.sub(r"\d{11,14}", "", nome).strip()
         return nome
 
-    # fallback → texto após |
     if "|" in assunto:
         return assunto.split("|")[-1].strip()
 
@@ -71,24 +68,29 @@ def extrair_nome_segurado(assunto):
 
 
 # -------------------------
-# Resumo do corpo
+# Resumir conteúdo
 # -------------------------
 def resumir_conteudo(body):
     body = body.replace("\n", " ").strip()
+
     if len(body) == 0:
         return "Informações recebidas por e-mail."
-    return body[:120] + "..." if len(body) > 120 else body
+
+    # resumo reduzido para facilitar edição
+    return body[:200] + "..." if len(body) > 200 else body
 
 
 # -------------------------
 # Conectar Google Sheets
 # -------------------------
 SHEET_ID = "1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE"
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 
 def append_to_sheet(linha):
-    gcp_key = st.secrets["gcp_key"]  # JÁ É DICIONÁRIO!
+    gcp_key = st.secrets["gcp_key"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
@@ -118,16 +120,26 @@ if uploaded:
     segurado = extrair_nome_segurado(assunto)
     canal = "E-mail"
     dt_fmt = data_hora.strftime("%d/%m/%Y %H:%M")
-    conteudo = resumir_conteudo(corpo)
-    tipo_evento = "Outros"
-    integracao = "RCV"
 
-    st.subheader("📄 Linha gerada")
+    # gera resumo automático
+    conteudo_resumido = resumir_conteudo(corpo)
+
+    st.subheader("✏️ Ajustar conteúdo antes de enviar")
+    conteudo_editado = st.text_area(
+        "Conteúdo resumido (pode editar):",
+        value=conteudo_resumido,
+        height=150
+    )
+
+    tipo_evento = st.selectbox("Tipo do evento:", ["Outros", "Aporte", "Aviso", "Solicitação"])
+    integracao = st.selectbox("Integração:", ["RCV", "APP", "OUTRO"])
+
+    st.subheader("📄 Linha final que será enviada")
     df = pd.DataFrame([{
         "segurado": segurado,
         "canal": canal,
         "data_hora": dt_fmt,
-        "conteudo": conteudo,
+        "conteudo": conteudo_editado,
         "tipo_evento": tipo_evento,
         "integracao": integracao
     }])
@@ -138,7 +150,7 @@ if uploaded:
             segurado,
             canal,
             dt_fmt,
-            conteudo,
+            conteudo_editado,
             tipo_evento,
             integracao
         ])
