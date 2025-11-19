@@ -90,11 +90,12 @@ def extrair_nome_segurado(assunto):
     return assunto.strip()
 
 # -------------------------
-# IA de sumarização (sem regras fixas)
+# IA de sumarização em português
 # -------------------------
 @st.cache_resource
 def get_summarizer():
-    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    # modelo treinado para sumarização em português
+    return pipeline("summarization", model="unicamp-dl/ptt5-base-portuguese-summarization")
 
 def resumir_conteudo(body):
     texto = (body or "").strip()
@@ -154,7 +155,7 @@ if uploaded:
     canal = "E-mail"
     dt_fmt = data_hora.strftime("%d/%m/%Y %H:%M")
 
-    # Resumo IA
+    # Resumo IA em português
     resumo_ia = resumir_conteudo(corpo)
 
     # Direção detectada (editável)
