@@ -7,18 +7,21 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 import json
+import time
+
+# Fallback extractivo (rápido e local)
+from sumy.parsers.plaintext import PlainTextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers.text_rank import TextRankSummarizer
 
 st.set_page_config(page_title="Importar E-mail", layout="centered")
 st.title("📩 Importador de E-mail (.eml) — Alimentar Planilha")
 
-# -------------------------
-# Config pessoal (opcional)
-# -------------------------
-# Preencha para melhorar a detecção de "Enviado" vs "Recebido".
+# Configure seu nome/e-mail (melhorar direção)
 MEU_NOME = "Silas Soares da Silva"
-MEU_EMAIL = ""  # opcional, tipo "seu.email@dominio.com"
+MEU_EMAIL = ""  # opcional, ex: "seu.email@dominio.com"
 
 # -------------------------
 # Ler .eml
@@ -56,70 +59,68 @@ def ler_eml(file):
     return subject, sender, to, dt, body
 
 # -------------------------
-# Direção (Enviado vs Recebido)
+# Direção (Recebido vs Enviado)
 # -------------------------
 def detectar_direcao(sender, to):
     s = sender.lower()
     t = to.lower()
-    # Se o remetente é você → Enviado; senão → Recebido
     if MEU_EMAIL and MEU_EMAIL.lower() in s:
         return "Enviado"
     if MEU_NOME and MEU_NOME.lower() in s:
         return "Enviado"
-    # Se seu e-mail/nome está no "To", provavelmente você recebeu
     if MEU_EMAIL and MEU_EMAIL.lower() in t:
         return "Recebido"
     if MEU_NOME and MEU_NOME.lower() in t:
         return "Recebido"
-    # fallback: se não sabemos, assume Recebido (importação costuma ser de caixa de entrada)
     return "Recebido"
 
 # -------------------------
-# Extrair nome do segurado do assunto
-# -------------------------
-def extrair_nome_segurado(assunto):
-    padrao = r"\|\s*(.*?)\s*-\s*\d"
-    m = re.search(padrao, assunto)
-    if m:
-        return m.group(1).strip()
-
-    padrao2 = r"-\s*\d+\s*-\s*(.*)"
-    m2 = re.search(padrao2, assunto)
-    if m2:
-        nome = m2.group(1).strip()
-        nome = re.sub(r"\d{11,14}", "", nome).strip()
-        return nome
-
-    if "|" in assunto:
-        return assunto.split("|")[-1].strip()
-
-    return assunto.strip()
-
-# -------------------------
-# IA de sumarização (sem regras de conteúdo)
+# IA de sumarização com proteção de erros
 # -------------------------
 @st.cache_resource
 def get_summarizer():
-    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    # Tenta carregar modelo leve e rápido
+    model_name = "sshleifer/distilbart-cnn-12-6"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    return pipeline("summarization", model=model, tokenizer=tokenizer)
+
+def resumo_extrativo_sumy(texto, sentencas=2):
+    try:
+        parser = PlainTextParser.from_string(texto, Tokenizer("portuguese"))
+        summarizer = TextRankSummarizer()
+        summary = summarizer(parser.document, sentencas)
+        out = " ".join(str(s) for s in summary).strip()
+        if not out:
+            return texto[:150] + ("..." if len(texto) > 150 else "")
+        return out
+    except Exception:
+        return texto[:150] + ("..." if len(texto) > 150 else "")
 
 def resumir_conteudo(body):
-    texto = body.strip()
+    texto = (body or "").strip()
     if len(texto) == 0:
         return "Informações recebidas por e-mail."
 
-    # Fallback para mensagens ultracurtas (evita alucinação)
+    # Mensagens ultra curtas: evita alucinação
     if len(texto.split()) <= 3:
-        # Mantém seu estilo objetivo
         return f"Mensagem breve: “{texto}”."
 
-    summarizer = get_summarizer()
-    texto = " ".join(texto.split())
+    texto_clean = " ".join(texto.split())
 
+    # Tenta IA com timeout simples
     try:
-        out = summarizer(texto, max_length=40, min_length=15, do_sample=False)
-        return out[0]["summary_text"]
-    except Exception:
-        return texto[:150] + ("..." if len(texto) > 150 else "")
+        summarizer = get_summarizer()
+        start = time.time()
+        out = summarizer(texto_clean, max_length=45, min_length=18, do_sample=False)
+        # Timeout defensivo (se demorar muito, usa fallback)
+        if time.time() - start > 8:
+            st.warning("Resumo gerado via método rápido por desempenho.")
+            return resumo_extrativo_sumy(texto_clean, sentencas=2)
+        return out[0].get("summary_text", resumo_extrativo_sumy(texto_clean, sentencas=2))
+    except Exception as e:
+        st.warning("IA de resumo indisponível no momento. Usando método rápido.")
+        return resumo_extrativo_sumy(texto_clean, sentencas=2)
 
 # -------------------------
 # Google Sheets
@@ -155,21 +156,21 @@ if uploaded:
     st.write(str(data_hora))
 
     st.subheader("📝 Corpo (prévia)")
-    st.write(corpo[:500] if corpo else "")
+    st.write(corpo[:600] if corpo else "")
 
     # Dados
     segurado = extrair_nome_segurado(assunto)
     canal = "E-mail"
     dt_fmt = data_hora.strftime("%d/%m/%Y %H:%M")
 
-    # Resumo IA
+    # Resumo (IA com fallback rápido)
     resumo_ia = resumir_conteudo(corpo)
 
-    # Direção detectada (ajustável)
+    # Direção detectada (editável)
     direcao_detectada = detectar_direcao(sender, to)
     direcao = st.selectbox("Direção:", ["Recebido", "Enviado"], index=["Recebido", "Enviado"].index(direcao_detectada))
 
-    # Monta frase final no seu estilo: direção + resumo
+    # Frase final: direção + resumo IA
     conteudo_resumido = f"{direcao} e-mail: {resumo_ia}"
 
     st.subheader("✏️ Ajustar conteúdo antes de enviar")
