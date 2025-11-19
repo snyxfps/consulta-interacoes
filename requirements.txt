@@ -3,3 +3,6 @@ gspread
 oauth2client
 pandas
 altair
+transformers
+torch
+sentencepiece
