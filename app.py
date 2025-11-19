@@ -8,11 +8,17 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 from transformers import pipeline
-import json   # para converter secrets em dict
+import json
 
 st.set_page_config(page_title="Importar E-mail", layout="centered")
-
 st.title("📩 Importador de E-mail (.eml) — Alimentar Planilha")
+
+# -------------------------
+# Config pessoal (opcional)
+# -------------------------
+# Preencha para melhorar a detecção de "Enviado" vs "Recebido".
+MEU_NOME = "Silas Soares da Silva"
+MEU_EMAIL = ""  # opcional, tipo "seu.email@dominio.com"
 
 # -------------------------
 # Ler .eml
@@ -21,8 +27,9 @@ def ler_eml(file):
     raw = file.read()
     msg = BytesParser(policy=policy.default).parsebytes(raw)
 
-    subject = msg.get("Subject", "")
-    sender = msg.get("From", "")
+    subject = msg.get("Subject", "") or ""
+    sender = msg.get("From", "") or ""
+    to = msg.get("To", "") or ""
     date_str = msg.get("Date")
 
     try:
@@ -30,6 +37,7 @@ def ler_eml(file):
     except:
         dt = datetime.now()
 
+    body = ""
     if msg.is_multipart():
         parts = []
         for part in msg.walk():
@@ -45,11 +53,29 @@ def ler_eml(file):
         except:
             body = ""
 
-    return subject, sender, dt, body
-
+    return subject, sender, to, dt, body
 
 # -------------------------
-# Extrair nome do segurado
+# Direção (Enviado vs Recebido)
+# -------------------------
+def detectar_direcao(sender, to):
+    s = sender.lower()
+    t = to.lower()
+    # Se o remetente é você → Enviado; senão → Recebido
+    if MEU_EMAIL and MEU_EMAIL.lower() in s:
+        return "Enviado"
+    if MEU_NOME and MEU_NOME.lower() in s:
+        return "Enviado"
+    # Se seu e-mail/nome está no "To", provavelmente você recebeu
+    if MEU_EMAIL and MEU_EMAIL.lower() in t:
+        return "Recebido"
+    if MEU_NOME and MEU_NOME.lower() in t:
+        return "Recebido"
+    # fallback: se não sabemos, assume Recebido (importação costuma ser de caixa de entrada)
+    return "Recebido"
+
+# -------------------------
+# Extrair nome do segurado do assunto
 # -------------------------
 def extrair_nome_segurado(assunto):
     padrao = r"\|\s*(.*?)\s*-\s*\d"
@@ -69,13 +95,11 @@ def extrair_nome_segurado(assunto):
 
     return assunto.strip()
 
-
 # -------------------------
-# Resumir conteúdo com IA local (sem regras fixas)
+# IA de sumarização (sem regras de conteúdo)
 # -------------------------
 @st.cache_resource
 def get_summarizer():
-    # modelo menor e mais rápido
     return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 def resumir_conteudo(body):
@@ -83,38 +107,32 @@ def resumir_conteudo(body):
     if len(texto) == 0:
         return "Informações recebidas por e-mail."
 
+    # Fallback para mensagens ultracurtas (evita alucinação)
+    if len(texto.split()) <= 3:
+        # Mantém seu estilo objetivo
+        return f"Mensagem breve: “{texto}”."
+
     summarizer = get_summarizer()
     texto = " ".join(texto.split())
 
     try:
-        out = summarizer(
-            texto,
-            max_length=40,   # resumo curto
-            min_length=15,
-            do_sample=False
-        )
+        out = summarizer(texto, max_length=40, min_length=15, do_sample=False)
         return out[0]["summary_text"]
     except Exception:
         return texto[:150] + ("..." if len(texto) > 150 else "")
 
-
 # -------------------------
-# Conectar Google Sheets
+# Google Sheets
 # -------------------------
 SHEET_ID = "1331BNS5F0lOsIT9fNDds4Jro_nMYvfeWGVeqGhgj_BE"
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 def append_to_sheet(linha):
-    # transforma string JSON em dict
-    gcp_key = json.loads(st.secrets["gcp_key"])
+    gcp_key = json.loads(st.secrets["gcp_key"])  # secrets como string JSON → dict
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
     sheet.append_row(linha, value_input_option="USER_ENTERED")
-
 
 # -------------------------
 # Upload EML
@@ -122,36 +140,40 @@ def append_to_sheet(linha):
 uploaded = st.file_uploader("Envie um arquivo .eml", type=["eml"])
 
 if uploaded:
-    assunto, sender, data_hora, corpo = ler_eml(uploaded)
+    assunto, sender, to, data_hora, corpo = ler_eml(uploaded)
 
     st.subheader("📌 Assunto detectado")
     st.write(assunto)
 
-    st.subheader("📧 Remetente detectado")
+    st.subheader("📧 Remetente")
     st.write(sender)
+
+    st.subheader("📨 Destinatário(s)")
+    st.write(to)
 
     st.subheader("📆 Data detectada")
     st.write(str(data_hora))
 
     st.subheader("📝 Corpo (prévia)")
-    st.write(corpo[:500])
+    st.write(corpo[:500] if corpo else "")
 
-    # -----------------------------
-    # Montar dados
-    # -----------------------------
+    # Dados
     segurado = extrair_nome_segurado(assunto)
     canal = "E-mail"
     dt_fmt = data_hora.strftime("%d/%m/%Y %H:%M")
 
-    # gera resumo automático pela IA
-    conteudo_resumido = resumir_conteudo(corpo)
+    # Resumo IA
+    resumo_ia = resumir_conteudo(corpo)
+
+    # Direção detectada (ajustável)
+    direcao_detectada = detectar_direcao(sender, to)
+    direcao = st.selectbox("Direção:", ["Recebido", "Enviado"], index=["Recebido", "Enviado"].index(direcao_detectada))
+
+    # Monta frase final no seu estilo: direção + resumo
+    conteudo_resumido = f"{direcao} e-mail: {resumo_ia}"
 
     st.subheader("✏️ Ajustar conteúdo antes de enviar")
-    conteudo_editado = st.text_area(
-        "Conteúdo resumido (pode editar):",
-        value=conteudo_resumido,
-        height=150
-    )
+    conteudo_editado = st.text_area("Conteúdo resumido (pode editar):", value=conteudo_resumido, height=150)
 
     tipo_evento = st.selectbox("Tipo do evento:", ["Outros", "Inicio", "Cobrança", "Retorno", "Questionamento"])
     integracao = st.selectbox("Integração:", ["RCV", "APP", "OUTRO"])
@@ -168,12 +190,5 @@ if uploaded:
     st.table(df)
 
     if st.button("Enviar para planilha"):
-        append_to_sheet([
-            segurado,
-            canal,
-            dt_fmt,
-            conteudo_editado,
-            tipo_evento,
-            integracao
-        ])
+        append_to_sheet([segurado, canal, dt_fmt, conteudo_editado, tipo_evento, integracao])
         st.success("✔ Linha enviada para a planilha com sucesso!")
