@@ -10,11 +10,6 @@ import pandas as pd
 from transformers import pipeline
 import json
 
-# Fallback extractivo
-from sumy.parsers.plaintext import PlainTextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.text_rank import TextRankSummarizer
-
 st.set_page_config(page_title="Importar E-mail", layout="centered")
 st.title("📩 Importador de E-mail (.eml) — Alimentar Planilha")
 
@@ -91,17 +86,11 @@ def extrair_nome_segurado(assunto):
     return assunto.strip()
 
 # -------------------------
-# IA de sumarização + fallback
+# IA de sumarização com fallback simples
 # -------------------------
 @st.cache_resource
 def get_summarizer():
     return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
-
-def resumo_extrativo(texto, sentencas=2):
-    parser = PlainTextParser.from_string(texto, Tokenizer("portuguese"))
-    summarizer = TextRankSummarizer()
-    summary = summarizer(parser.document, sentencas)
-    return " ".join(str(s) for s in summary)
 
 def resumir_conteudo(body):
     texto = (body or "").strip()
@@ -115,12 +104,14 @@ def resumir_conteudo(body):
         summarizer = get_summarizer()
         out = summarizer(texto, max_length=45, min_length=18, do_sample=False)
         resumo = out[0]["summary_text"]
-        # se o resumo for igual ao original, usa fallback
+        # se o resumo for igual ao original, faz fallback simples
         if resumo.lower() in texto.lower():
-            return resumo_extrativo(texto)
+            frases = texto.split(".")
+            return ". ".join(frases[:2]).strip() + "..."
         return resumo
     except Exception:
-        return resumo_extrativo(texto)
+        frases = texto.split(".")
+        return ". ".join(frases[:2]).strip() + "..."
 
 # -------------------------
 # Google Sheets
