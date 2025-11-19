@@ -8,7 +8,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 from transformers import pipeline
-import json
 
 st.set_page_config(page_title="Importar E-mail", layout="centered")
 
@@ -70,12 +69,12 @@ def extrair_nome_segurado(assunto):
 
 
 # -------------------------
-# Resumir conteúdo com IA local (Transformers otimizado)
+# Resumir conteúdo com IA local (Transformers)
 # -------------------------
 @st.cache_resource
 def get_summarizer():
-    # modelo menor e mais rápido
-    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    # modelo gratuito de sumarização
+    return pipeline("summarization", model="facebook/bart-large-cnn")
 
 def resumir_conteudo(body):
     texto = body.strip()
@@ -83,21 +82,39 @@ def resumir_conteudo(body):
         return "Informações recebidas por e-mail."
 
     summarizer = get_summarizer()
+
+    # Limpeza simples
     texto = " ".join(texto.split())
 
-    # blocos menores para acelerar
-    max_chars = 1000
+    # Quebra em blocos para textos longos
+    max_chars = 1500
     blocos = [texto[i:i+max_chars] for i in range(0, len(texto), max_chars)]
 
     resumos = []
     for b in blocos:
         try:
-            out = summarizer(b, max_length=40, min_length=15, do_sample=False)
+            out = summarizer(
+                b,
+                max_length=60,
+                min_length=20,
+                do_sample=False
+            )
             resumos.append(out[0]["summary_text"])
         except Exception:
-            resumos.append(b[:150] + ("..." if len(b) > 150 else ""))
+            resumos.append(b[:200] + ("..." if len(b) > 200 else ""))
 
     texto_resumido = " ".join(resumos)
+    if len(resumos) > 1:
+        try:
+            out_final = summarizer(
+                texto_resumido,
+                max_length=60,
+                min_length=20,
+                do_sample=False
+            )
+            texto_resumido = out_final[0]["summary_text"]
+        except Exception:
+            pass
 
     # Ajuste para casos frequentes
     low = texto.lower()
@@ -119,8 +136,7 @@ scope = [
 ]
 
 def append_to_sheet(linha):
-    # CORREÇÃO: transforma string JSON em dict
-    gcp_key = json.loads(st.secrets["gcp_key"])
+    gcp_key = st.secrets["gcp_key"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_key, scope)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
@@ -151,7 +167,7 @@ if uploaded:
     canal = "E-mail"
     dt_fmt = data_hora.strftime("%d/%m/%Y %H:%M")
 
-    # gera resumo automático otimizado
+    # gera resumo automático
     conteudo_resumido = resumir_conteudo(corpo)
 
     st.subheader("✏️ Ajustar conteúdo antes de enviar")
@@ -161,7 +177,7 @@ if uploaded:
         height=150
     )
 
-    tipo_evento = st.selectbox("Tipo do evento:", ["Outros", "Inicio", "Cobrança", "Retorno", "Questionamento"])
+    tipo_evento = st.selectbox("Tipo do evento:", ["Outros", "Aporte", "Aviso", "Solicitação"])
     integracao = st.selectbox("Integração:", ["RCV", "APP", "OUTRO"])
 
     st.subheader("📄 Linha final que será enviada")
