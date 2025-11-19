@@ -7,6 +7,7 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
+from transformers import pipeline
 
 st.set_page_config(page_title="Importar E-mail", layout="centered")
 
@@ -68,37 +69,61 @@ def extrair_nome_segurado(assunto):
 
 
 # -------------------------
-# Resumir conteúdo (versão automática)
+# Resumir conteúdo com IA local (Transformers)
 # -------------------------
-def resumir_conteudo(body):
-    texto = body.replace("\n", " ").strip().lower()
+@st.cache_resource
+def get_summarizer():
+    # modelo gratuito de sumarização
+    return pipeline("summarization", model="facebook/bart-large-cnn")
 
+def resumir_conteudo(body):
+    texto = body.strip()
     if len(texto) == 0:
         return "Informações recebidas por e-mail."
 
-    # remove saudações comuns
-    texto = re.sub(r"olá.*?bom dia|boa tarde|boa noite", "", texto)
-    texto = re.sub(r"atenciosamente.*", "", texto)
+    summarizer = get_summarizer()
 
-    # palavras-chave -> ação resumida
-    if "confirmar" in texto or "dúvida" in texto:
+    # Limpeza simples
+    texto = " ".join(texto.split())
+
+    # Quebra em blocos para textos longos
+    max_chars = 1500
+    blocos = [texto[i:i+max_chars] for i in range(0, len(texto), max_chars)]
+
+    resumos = []
+    for b in blocos:
+        try:
+            out = summarizer(
+                b,
+                max_length=60,
+                min_length=20,
+                do_sample=False
+            )
+            resumos.append(out[0]["summary_text"])
+        except Exception:
+            resumos.append(b[:200] + ("..." if len(b) > 200 else ""))
+
+    texto_resumido = " ".join(resumos)
+    if len(resumos) > 1:
+        try:
+            out_final = summarizer(
+                texto_resumido,
+                max_length=60,
+                min_length=20,
+                do_sample=False
+            )
+            texto_resumido = out_final[0]["summary_text"]
+        except Exception:
+            pass
+
+    # Ajuste para casos frequentes
+    low = texto.lower()
+    if any(k in low for k in ["agenda", "reuni", "horário", "disponibilidade"]):
+        return "Enviado e-mail solicitando disponibilidade de horários para agendar reunião inicial."
+    if any(k in low for k in ["dúvida", "confirmar", "esclarecimento"]):
         return "Enviado e-mail questionando se ficou dúvida sobre a integração ou documentação."
-    if "integração" in texto:
-        return "Enviado e-mail tratando sobre integração do sistema."
-    if "solicitação" in texto or "pedido" in texto:
-        return "Enviado e-mail com solicitação de informações."
-    if "aviso" in texto or "informar" in texto:
-        return "Enviado e-mail informando atualização ou aviso importante."
-    if "agenda" in texto or "reunião" in texto:
-        return "Enviado e-mail sobre confirmação de agenda ou reunião."
 
-    # fallback: pega primeira frase curta
-    frases = re.split(r"[.!?]", texto)
-    for f in frases:
-        f = f.strip()
-        if len(f) > 20:
-            return "Enviado e-mail: " + f[:80] + "..."
-    return "Enviado e-mail com informações gerais."
+    return texto_resumido
 
 
 # -------------------------
