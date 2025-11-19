@@ -10,12 +10,16 @@ import pandas as pd
 from transformers import pipeline
 import json
 
+# Fallback extractivo
+from sumy.parsers.plaintext import PlainTextParser
+from sumy.nlp.tokenizers import Tokenizer
+from sumy.summarizers.text_rank import TextRankSummarizer
+
 st.set_page_config(page_title="Importar E-mail", layout="centered")
 st.title("📩 Importador de E-mail (.eml) — Alimentar Planilha")
 
-# Configure seu nome/e-mail para detectar direção
 MEU_NOME = "Silas Soares da Silva"
-MEU_EMAIL = ""  # opcional, ex: "seu.email@dominio.com"
+MEU_EMAIL = ""  # opcional
 
 # -------------------------
 # Ler .eml
@@ -53,7 +57,7 @@ def ler_eml(file):
     return subject, sender, to, dt, body
 
 # -------------------------
-# Direção (Recebido vs Enviado)
+# Direção
 # -------------------------
 def detectar_direcao(sender, to):
     s = sender.lower()
@@ -76,43 +80,47 @@ def extrair_nome_segurado(assunto):
     m = re.search(padrao, assunto)
     if m:
         return m.group(1).strip()
-
     padrao2 = r"-\s*\d+\s*-\s*(.*)"
     m2 = re.search(padrao2, assunto)
     if m2:
         nome = m2.group(1).strip()
         nome = re.sub(r"\d{11,14}", "", nome).strip()
         return nome
-
     if "|" in assunto:
         return assunto.split("|")[-1].strip()
-
     return assunto.strip()
 
 # -------------------------
-# IA de sumarização em português
+# IA de sumarização + fallback
 # -------------------------
 @st.cache_resource
 def get_summarizer():
-    # modelo treinado para sumarização em português
-    return pipeline("summarization", model="mrm8488/bert2bert_shared-portuguese-finetuned-summarization")
+    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+
+def resumo_extrativo(texto, sentencas=2):
+    parser = PlainTextParser.from_string(texto, Tokenizer("portuguese"))
+    summarizer = TextRankSummarizer()
+    summary = summarizer(parser.document, sentencas)
+    return " ".join(str(s) for s in summary)
 
 def resumir_conteudo(body):
     texto = (body or "").strip()
     if len(texto) == 0:
         return "Informações recebidas por e-mail."
-
     if len(texto.split()) <= 3:
         return f"Mensagem breve: “{texto}”."
 
-    summarizer = get_summarizer()
     texto = " ".join(texto.split())
-
     try:
+        summarizer = get_summarizer()
         out = summarizer(texto, max_length=45, min_length=18, do_sample=False)
-        return out[0]["summary_text"]
+        resumo = out[0]["summary_text"]
+        # se o resumo for igual ao original, usa fallback
+        if resumo.lower() in texto.lower():
+            return resumo_extrativo(texto)
+        return resumo
     except Exception:
-        return texto[:150] + ("..." if len(texto) > 150 else "")
+        return resumo_extrativo(texto)
 
 # -------------------------
 # Google Sheets
@@ -150,19 +158,15 @@ if uploaded:
     st.subheader("📝 Corpo (prévia)")
     st.write(corpo[:600] if corpo else "")
 
-    # Dados
     segurado = extrair_nome_segurado(assunto)
     canal = "E-mail"
     dt_fmt = data_hora.strftime("%d/%m/%Y %H:%M")
 
-    # Resumo IA em português
     resumo_ia = resumir_conteudo(corpo)
 
-    # Direção detectada (editável)
     direcao_detectada = detectar_direcao(sender, to)
     direcao = st.selectbox("Direção:", ["Recebido", "Enviado"], index=["Recebido", "Enviado"].index(direcao_detectada))
 
-    # Frase final: direção + resumo IA
     conteudo_resumido = f"{direcao} e-mail: {resumo_ia}"
 
     st.subheader("✏️ Ajustar conteúdo antes de enviar")
