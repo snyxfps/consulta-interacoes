@@ -68,16 +68,37 @@ def extrair_nome_segurado(assunto):
 
 
 # -------------------------
-# Resumir conteúdo
+# Resumir conteúdo (versão automática)
 # -------------------------
 def resumir_conteudo(body):
-    body = body.replace("\n", " ").strip()
+    texto = body.replace("\n", " ").strip().lower()
 
-    if len(body) == 0:
+    if len(texto) == 0:
         return "Informações recebidas por e-mail."
 
-    # resumo reduzido para facilitar edição
-    return body[:200] + "..." if len(body) > 200 else body
+    # remove saudações comuns
+    texto = re.sub(r"olá.*?bom dia|boa tarde|boa noite", "", texto)
+    texto = re.sub(r"atenciosamente.*", "", texto)
+
+    # palavras-chave -> ação resumida
+    if "confirmar" in texto or "dúvida" in texto:
+        return "Enviado e-mail questionando se ficou dúvida sobre a integração ou documentação."
+    if "integração" in texto:
+        return "Enviado e-mail tratando sobre integração do sistema."
+    if "solicitação" in texto or "pedido" in texto:
+        return "Enviado e-mail com solicitação de informações."
+    if "aviso" in texto or "informar" in texto:
+        return "Enviado e-mail informando atualização ou aviso importante."
+    if "agenda" in texto or "reunião" in texto:
+        return "Enviado e-mail sobre confirmação de agenda ou reunião."
+
+    # fallback: pega primeira frase curta
+    frases = re.split(r"[.!?]", texto)
+    for f in frases:
+        f = f.strip()
+        if len(f) > 20:
+            return "Enviado e-mail: " + f[:80] + "..."
+    return "Enviado e-mail com informações gerais."
 
 
 # -------------------------
